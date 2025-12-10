@@ -41,8 +41,14 @@ dependencies:
   geolocator: ^10.1.0
   geocoding: ^2.1.1
   
-  # Text-to-Speech (for future voice integration)
+  # Text-to-Speech
   flutter_tts: ^4.0.2
+  
+  # Speech Recognition
+  speech_to_text: ^6.6.0
+  
+  # HTTP for API calls
+  http: ^1.2.0
   
   # Permissions
   permission_handler: ^11.3.0

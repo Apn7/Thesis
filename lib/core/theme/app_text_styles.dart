@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'app_colors.dart';
 
 /// Typography system with enhanced readability for accessibility
 class AppTextStyles {

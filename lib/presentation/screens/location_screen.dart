@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
-import '../../core/utils/accessibility_helper.dart';
 import '../widgets/info_card.dart';
 
 /// Location screen displaying GPS coordinates and address
