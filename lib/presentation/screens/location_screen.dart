@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import '../../services/location_service.dart';
 import '../widgets/info_card.dart';
 
 /// Location screen displaying GPS coordinates and address
@@ -12,48 +13,72 @@ class LocationScreen extends StatefulWidget {
 }
 
 class _LocationScreenState extends State<LocationScreen> {
-  // Mock location data (will be replaced with real GPS later)
-  String _latitude = '23.8103° N';
-  String _longitude = '90.4125° E';
-  String _address = 'ধানমন্ডি ১২ নম্বর রোড, ঢাকা';
-  String _addressEn = 'Dhanmondi Road 12, Dhaka';
-  bool _isLoading = false;
+  final LocationService _locationService = LocationService.instance;
+  
+  String _latitude = '--';
+  String _longitude = '--';
+  String _address = 'অবস্থান লোড হচ্ছে...';
+  String _addressEn = 'Loading location...';
+  bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   
   @override
   void initState() {
     super.initState();
-    // Announce screen
+    // Fetch location on screen load
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _announceLocation();
+      _fetchLocation();
     });
   }
   
   void _announceLocation() {
-    // Placeholder for TTS
     debugPrint('Location: $_address, $_addressEn');
   }
   
-  Future<void> _refreshLocation() async {
+  Future<void> _fetchLocation() async {
     setState(() {
       _isLoading = true;
+      _hasError = false;
+      _errorMessage = '';
     });
     
-    // Simulate location fetch
-    await Future.delayed(const Duration(seconds: 2));
+    final locationData = await _locationService.getCurrentLocation();
     
-    setState(() {
-      _isLoading = false;
-    });
+    if (!mounted) return;
     
-    if (mounted) {
+    if (locationData != null) {
+      setState(() {
+        _latitude = locationData.latitudeFormatted;
+        _longitude = locationData.longitudeFormatted;
+        _address = locationData.addressBn;
+        _addressEn = locationData.addressEn;
+        _isLoading = false;
+        _hasError = false;
+      });
+      
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('অবস্থান আপডেট হয়েছে / Location updated'),
+          content: Text('অবস্থান পাওয়া গেছে / Location found'),
           duration: Duration(seconds: 2),
         ),
       );
       _announceLocation();
+    } else {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = 'অবস্থান পাওয়া যায়নি। অনুগ্রহ করে GPS চালু করুন এবং অনুমতি দিন।';
+        _latitude = '--';
+        _longitude = '--';
+        _address = 'অবস্থান পাওয়া যায়নি';
+        _addressEn = 'Location not available';
+      });
     }
+  }
+  
+  Future<void> _refreshLocation() async {
+    await _fetchLocation();
   }
   
   @override
@@ -99,43 +124,130 @@ class _LocationScreenState extends State<LocationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Map Placeholder
-              Card(
-                elevation: 4,
-                child: Container(
-                  height: 200,
+              // Error Banner (if permission denied)
+              if (_hasError)
+                Container(
+                  margin: EdgeInsets.only(bottom: AppConstants.spacingL),
+                  padding: EdgeInsets.all(AppConstants.spacingL),
                   decoration: BoxDecoration(
-                    color: AppColors.primaryLight.withOpacity(0.3),
+                    color: AppColors.error.withAlpha(25),
                     borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                    border: Border.all(
+                      color: AppColors.error.withAlpha(77),
+                      width: 1,
+                    ),
                   ),
-                  child: Semantics(
-                    label: 'মানচিত্র প্রদর্শন। ভবিষ্যতে সক্রিয় হবে। Map display. Will be active in future.',
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                  child: Column(
+                    children: [
+                      Row(
                         children: [
                           Icon(
-                            Icons.map,
-                            size: AppConstants.iconXxl,
-                            color: AppColors.primary,
+                            Icons.location_off,
+                            color: AppColors.error,
+                            size: AppConstants.iconL,
                           ),
-                          SizedBox(height: AppConstants.spacingM),
-                          Text(
-                            'মানচিত্র এখানে থাকবে',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          Text(
-                            'Map will appear here',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: AppColors.textSecondary,
+                          SizedBox(width: AppConstants.spacingM),
+                          Expanded(
+                            child: Text(
+                              _errorMessage,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: AppColors.error,
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      SizedBox(height: AppConstants.spacingM),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _locationService.openLocationSettings(),
+                              icon: const Icon(Icons.settings),
+                              label: const Text('GPS সেটিংস'),
+                            ),
+                          ),
+                          SizedBox(width: AppConstants.spacingS),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _locationService.openAppSettings(),
+                              icon: const Icon(Icons.app_settings_alt),
+                              label: const Text('অ্যাপ অনুমতি'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              
+              // Loading Indicator
+              if (_isLoading)
+                Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryLight.withAlpha(77),
+                    borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const CircularProgressIndicator(),
+                        SizedBox(height: AppConstants.spacingL),
+                        Text(
+                          'GPS থেকে অবস্থান নেওয়া হচ্ছে...',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          'Getting location from GPS...',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ),
+              
+              // Map Placeholder (when not loading)
+              if (!_isLoading)
+                Card(
+                  elevation: 4,
+                  child: Container(
+                    height: 200,
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight.withAlpha(77),
+                      borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                    ),
+                    child: Semantics(
+                      label: 'মানচিত্র প্রদর্শন। ভবিষ্যতে সক্রিয় হবে। Map display. Will be active in future.',
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.map,
+                              size: AppConstants.iconXxl,
+                              color: AppColors.primary,
+                            ),
+                            SizedBox(height: AppConstants.spacingM),
+                            Text(
+                              'মানচিত্র এখানে থাকবে',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              'Map will appear here',
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               
               SizedBox(height: AppConstants.spacingXl),
               
@@ -164,7 +276,7 @@ class _LocationScreenState extends State<LocationScreen> {
                         Container(
                           padding: EdgeInsets.all(AppConstants.spacingL),
                           decoration: BoxDecoration(
-                            color: AppColors.info.withOpacity(0.1),
+                            color: AppColors.info.withAlpha(25),
                             borderRadius: BorderRadius.circular(AppConstants.radiusM),
                           ),
                           child: Icon(
@@ -243,7 +355,7 @@ class _LocationScreenState extends State<LocationScreen> {
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: _refreshLocation,
+                      onPressed: _isLoading ? null : _refreshLocation,
                       icon: const Icon(Icons.my_location),
                       label: const Text('আবার পড়ুন\nRefresh'),
                       style: FilledButton.styleFrom(
@@ -281,15 +393,15 @@ class _LocationScreenState extends State<LocationScreen> {
               Container(
                 padding: EdgeInsets.all(AppConstants.spacingL),
                 decoration: BoxDecoration(
-                  color: AppColors.info.withOpacity(0.1),
+                  color: AppColors.info.withAlpha(25),
                   borderRadius: BorderRadius.circular(AppConstants.radiusM),
                   border: Border.all(
-                    color: AppColors.info.withOpacity(0.3),
+                    color: AppColors.info.withAlpha(77),
                     width: 1,
                   ),
                 ),
                 child: Semantics(
-                  label: 'তথ্য: GPS অবস্থান অফলাইনে কাজ করে। GPS location works offline.',
+                  label: 'তথ্য: GPS অবস্থান অফলাইনে কাজ করে, ঠিকানার জন্য ইন্টারনেট প্রয়োজন। GPS location works offline, address requires internet.',
                   child: Row(
                     children: [
                       Icon(
@@ -310,7 +422,7 @@ class _LocationScreenState extends State<LocationScreen> {
                             ),
                             SizedBox(height: AppConstants.spacingXs),
                             Text(
-                              'GPS location works offline',
+                              'GPS works offline, address needs internet',
                               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textSecondary,
                               ),
