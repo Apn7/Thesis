@@ -1,6 +1,8 @@
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 
 /// Location data containing coordinates and address
 class LocationData {
@@ -75,57 +77,82 @@ class LocationService {
 
       debugPrint('Got position: ${position.latitude}, ${position.longitude}');
 
-      // Try to get address (requires internet)
-      String addressBn = 'ঠিকানা পাওয়া যায়নি';
-      String addressEn = 'Address not available';
-
-      try {
-        final placemarks = await placemarkFromCoordinates(
-          position.latitude,
-          position.longitude,
-        );
-
-        if (placemarks.isNotEmpty) {
-          final place = placemarks.first;
-          // Build address string
-          final parts = <String>[];
-          if (place.street != null && place.street!.isNotEmpty) {
-            parts.add(place.street!);
-          }
-          if (place.subLocality != null && place.subLocality!.isNotEmpty) {
-            parts.add(place.subLocality!);
-          }
-          if (place.locality != null && place.locality!.isNotEmpty) {
-            parts.add(place.locality!);
-          }
-          if (place.administrativeArea != null && place.administrativeArea!.isNotEmpty) {
-            parts.add(place.administrativeArea!);
-          }
-
-          if (parts.isNotEmpty) {
-            addressEn = parts.join(', ');
-            // For Bengali, we use the same address (geocoding doesn't return Bengali)
-            // In a production app, you might use a translation API
-            addressBn = addressEn;
-          }
-
-          debugPrint('Address: $addressEn');
-        }
-      } catch (e) {
-        debugPrint('Geocoding error (may be offline): $e');
-        // Keep default "Address not available" messages
-      }
+      // Get address using HTTP-based geocoding (works on all platforms including web)
+      final address = await _reverseGeocodeHTTP(position.latitude, position.longitude);
 
       return LocationData(
         latitude: position.latitude,
         longitude: position.longitude,
-        addressBn: addressBn,
-        addressEn: addressEn,
+        addressBn: address,
+        addressEn: address,
         timestamp: DateTime.now(),
       );
     } catch (e) {
       debugPrint('Location error: $e');
       return null;
+    }
+  }
+
+  /// Reverse geocoding using OpenStreetMap Nominatim API (works on web + mobile)
+  Future<String> _reverseGeocodeHTTP(double lat, double lon) async {
+    try {
+      debugPrint('Attempting HTTP reverse geocoding for: $lat, $lon');
+      
+      // Using OpenStreetMap Nominatim API (free, no API key required)
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
+      );
+      
+      final response = await http.get(
+        url,
+        headers: {
+          'User-Agent': 'SmartCaneApp/1.0', // Required by Nominatim
+          'Accept-Language': 'en,bn', // Request English and Bengali
+        },
+      ).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        debugPrint('Nominatim response: ${response.body}');
+        
+        // Get display name (full formatted address)
+        if (data.containsKey('display_name')) {
+          final displayName = data['display_name'] as String;
+          debugPrint('Address found: $displayName');
+          return displayName;
+        }
+        
+        // Fallback: build address from parts
+        if (data.containsKey('address')) {
+          final address = data['address'] as Map<String, dynamic>;
+          final parts = <String>[];
+          
+          // Add relevant address parts
+          if (address['road'] != null) parts.add(address['road']);
+          if (address['neighbourhood'] != null) parts.add(address['neighbourhood']);
+          if (address['suburb'] != null) parts.add(address['suburb']);
+          if (address['city'] != null) parts.add(address['city']);
+          if (address['town'] != null) parts.add(address['town']);
+          if (address['village'] != null) parts.add(address['village']);
+          if (address['state'] != null) parts.add(address['state']);
+          if (address['country'] != null) parts.add(address['country']);
+          
+          if (parts.isNotEmpty) {
+            final formattedAddress = parts.join(', ');
+            debugPrint('Address built from parts: $formattedAddress');
+            return formattedAddress;
+          }
+        }
+        
+        return 'Address not available';
+      } else {
+        debugPrint('Nominatim API error: ${response.statusCode}');
+        return 'Address not available';
+      }
+    } catch (e) {
+      debugPrint('HTTP Geocoding error: $e');
+      return 'Address not available';
     }
   }
 
