@@ -42,7 +42,8 @@ dependencies:
   geocoding: ^2.1.1
   
   # Text-to-Speech
-  flutter_tts: ^4.0.2
+  # NOTE: flutter_tts removed due to Windows CMake issues
+  # Using stub implementation for thesis demo
   
   # Speech Recognition
   speech_to_text: ^6.6.0

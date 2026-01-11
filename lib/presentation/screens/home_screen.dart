@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
@@ -18,11 +19,168 @@ class _HomeScreenState extends State<HomeScreen> {
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
   bool _isInitialized = false;
   
+  // TCP Server State
+  ServerSocket? _serverSocket;
+  Socket? _connectedClient;
+  String _connectionStatus = 'Initializing Server...';
+  String _latestAlert = '';
+  
   @override
   void initState() {
     super.initState();
     _initializeServices();
     _setupNavigationCallback();
+    _startTcpServer();
+  }
+  
+  @override
+  void dispose() {
+    _stopTcpServer();
+    super.dispose();
+  }
+  
+  /// Starts the TCP server to listen for Raspberry Pi messages
+  Future<void> _startTcpServer() async {
+    try {
+      _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, 4444);
+      print('>> TCP SERVER LISTENING on Port 4444');
+      
+      setState(() {
+        _connectionStatus = 'Waiting for Cane...';
+      });
+      
+      _serverSocket!.listen(
+        (Socket client) {
+          _connectedClient = client;
+          final clientAddress = client.remoteAddress.address;
+          print('>> CLIENT CONNECTED: $clientAddress');
+          
+          setState(() {
+            _connectionStatus = 'Connected: $clientAddress';
+          });
+          
+          // Announce connection via voice
+          _voiceService.speak('স্মার্ট ক্যান সংযুক্ত। Smart Cane connected.');
+          
+          client.listen(
+            (List<int> data) {
+              final message = String.fromCharCodes(data).trim();
+              print('>> RECEIVED: $message');
+              _handleIncomingMessage(message);
+            },
+            onError: (error) {
+              print('>> CLIENT ERROR: $error');
+              setState(() {
+                _connectionStatus = 'Connection Error';
+                _connectedClient = null;
+              });
+            },
+            onDone: () {
+              print('>> CLIENT DISCONNECTED');
+              setState(() {
+                _connectionStatus = 'Cane Disconnected';
+                _connectedClient = null;
+              });
+            },
+            cancelOnError: false,
+          );
+        },
+        onError: (error) {
+          print('>> SERVER ERROR: $error');
+          setState(() {
+            _connectionStatus = 'Server Error';
+          });
+        },
+      );
+    } catch (e) {
+      print('>> SOCKET BIND ERROR: $e');
+      setState(() {
+        _connectionStatus = 'Failed to start server: $e';
+      });
+    }
+  }
+  
+  /// Stops the TCP server and closes connections
+  void _stopTcpServer() {
+    _connectedClient?.close();
+    _serverSocket?.close();
+    _connectedClient = null;
+    _serverSocket = null;
+  }
+  
+  /// Handles incoming messages from the Raspberry Pi
+  void _handleIncomingMessage(String message) {
+    setState(() {
+      _latestAlert = message;
+    });
+    
+    // Speak the alert (logged to console in stub mode)
+    _voiceService.speak(message);
+  }
+  
+  /// Shows a critical alert dialog for emergency warnings
+  void _showCriticalAlertDialog(String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: AppColors.error,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.radiusL),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 32),
+              SizedBox(width: AppConstants.spacingM),
+              const Expanded(
+                child: Text(
+                  '⚠️ CRITICAL ALERT',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 20,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            padding: EdgeInsets.all(AppConstants.spacingM),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(AppConstants.radiusM),
+            ),
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                style: FilledButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: AppColors.error,
+                  padding: EdgeInsets.symmetric(vertical: AppConstants.spacingM),
+                ),
+                child: const Text(
+                  'DISMISS',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
   
   Future<void> _initializeServices() async {
@@ -226,6 +384,148 @@ class _HomeScreenState extends State<HomeScreen> {
                               _voiceService.error,
                               style: TextStyle(color: AppColors.error),
                               textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                  
+                  SizedBox(height: AppConstants.spacingL),
+                  
+                  // TCP Connection Status Card
+                  Card(
+                    elevation: 4,
+                    color: _connectedClient != null 
+                        ? AppColors.success.withOpacity(0.1)
+                        : Theme.of(context).colorScheme.surface,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppConstants.radiusM),
+                      side: BorderSide(
+                        color: _connectedClient != null 
+                            ? AppColors.success 
+                            : AppColors.primary.withOpacity(0.3),
+                        width: 2,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(AppConstants.spacingL),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header
+                          Row(
+                            children: [
+                              Icon(
+                                _connectedClient != null 
+                                    ? Icons.wifi 
+                                    : Icons.wifi_off,
+                                color: _connectedClient != null 
+                                    ? AppColors.success 
+                                    : AppColors.warning,
+                                size: 28,
+                              ),
+                              SizedBox(width: AppConstants.spacingM),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ক্যান কানেকশন / Cane Connection',
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    SizedBox(height: AppConstants.spacingXs),
+                                    Text(
+                                      _connectionStatus,
+                                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                        color: _connectedClient != null 
+                                            ? AppColors.success 
+                                            : AppColors.textSecondary,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Connection indicator dot
+                              Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _connectedClient != null 
+                                      ? AppColors.success 
+                                      : AppColors.warning,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (_connectedClient != null 
+                                          ? AppColors.success 
+                                          : AppColors.warning).withOpacity(0.5),
+                                      blurRadius: 8,
+                                      spreadRadius: 2,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          // Latest Alert Display
+                          if (_latestAlert.isNotEmpty) ...[
+                            SizedBox(height: AppConstants.spacingM),
+                            Divider(color: AppColors.primary.withOpacity(0.2)),
+                            SizedBox(height: AppConstants.spacingM),
+                            Container(
+                              width: double.infinity,
+                              padding: EdgeInsets.all(AppConstants.spacingM),
+                              decoration: BoxDecoration(
+                                color: _latestAlert.toUpperCase().contains('CRITICAL')
+                                    ? AppColors.error.withOpacity(0.15)
+                                    : AppColors.info.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(AppConstants.radiusS),
+                                border: Border.all(
+                                  color: _latestAlert.toUpperCase().contains('CRITICAL')
+                                      ? AppColors.error.withOpacity(0.5)
+                                      : AppColors.info.withOpacity(0.3),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        _latestAlert.toUpperCase().contains('CRITICAL')
+                                            ? Icons.warning_amber_rounded
+                                            : Icons.notifications_active,
+                                        color: _latestAlert.toUpperCase().contains('CRITICAL')
+                                            ? AppColors.error
+                                            : AppColors.info,
+                                        size: 20,
+                                      ),
+                                      SizedBox(width: AppConstants.spacingS),
+                                      Text(
+                                        'সর্বশেষ সতর্কতা / Latest Alert',
+                                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: _latestAlert.toUpperCase().contains('CRITICAL')
+                                              ? AppColors.error
+                                              : AppColors.info,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  SizedBox(height: AppConstants.spacingS),
+                                  Text(
+                                    _latestAlert,
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ],

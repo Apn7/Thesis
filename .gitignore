@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Windows build ephemeral files
+/windows/flutter/ephemeral/
+
+# Flutter generated plugin files
+.flutter-plugins
+
+# Project metadata
+.metadata
+
+# IDE project files
+*.iml
