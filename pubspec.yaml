@@ -46,7 +46,7 @@ dependencies:
   # Using stub implementation for thesis demo
   
   # Speech Recognition
-  speech_to_text: ^6.6.0
+  speech_to_text: ^7.0.0
   
   # HTTP for API calls
   http: ^1.2.0

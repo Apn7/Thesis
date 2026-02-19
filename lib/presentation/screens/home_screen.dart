@@ -24,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Socket? _connectedClient;
   String _connectionStatus = 'Initializing Server...';
   String _latestAlert = '';
+  String _deviceIpAddress = 'Detecting...';
   
   @override
   void initState() {
@@ -42,8 +43,12 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Starts the TCP server to listen for Raspberry Pi messages
   Future<void> _startTcpServer() async {
     try {
+      // Get device IP address for display
+      await _getDeviceIpAddress();
+      
       _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, 4444);
       print('>> TCP SERVER LISTENING on Port 4444');
+      print('>> Device IP: $_deviceIpAddress');
       
       setState(() {
         _connectionStatus = 'Waiting for Cane...';
@@ -106,6 +111,54 @@ class _HomeScreenState extends State<HomeScreen> {
     _serverSocket?.close();
     _connectedClient = null;
     _serverSocket = null;
+  }
+  
+  /// Gets the device's WiFi IP address
+  Future<void> _getDeviceIpAddress() async {
+    try {
+      final interfaces = await NetworkInterface.list(
+        type: InternetAddressType.IPv4,
+        includeLoopback: false,
+      );
+      
+      for (var interface in interfaces) {
+        // Look for WiFi interface
+        if (interface.name.toLowerCase().contains('wlan') ||
+            interface.name.toLowerCase().contains('wifi') ||
+            interface.name.toLowerCase().contains('en0') ||
+            interface.name.toLowerCase().contains('eth')) {
+          for (var addr in interface.addresses) {
+            if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+              setState(() {
+                _deviceIpAddress = addr.address;
+              });
+              return;
+            }
+          }
+        }
+      }
+      
+      // Fallback: use any IPv4 address found
+      for (var interface in interfaces) {
+        for (var addr in interface.addresses) {
+          if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
+            setState(() {
+              _deviceIpAddress = addr.address;
+            });
+            return;
+          }
+        }
+      }
+      
+      setState(() {
+        _deviceIpAddress = 'Not found';
+      });
+    } catch (e) {
+      print('>> Failed to get IP: $e');
+      setState(() {
+        _deviceIpAddress = 'Error: $e';
+      });
+    }
   }
   
   /// Handles incoming messages from the Raspberry Pi
@@ -472,6 +525,44 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           
+                          // Device IP Address Display (for Raspberry Pi configuration)
+                          SizedBox(height: AppConstants.spacingM),
+                          Container(
+                            width: double.infinity,
+                            padding: EdgeInsets.all(AppConstants.spacingS),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(AppConstants.radiusS),
+                              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.lan, color: AppColors.primary, size: 18),
+                                SizedBox(width: AppConstants.spacingS),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Connect Pi to / পাই কানেক্ট করুন:',
+                                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                          color: AppColors.textSecondary,
+                                        ),
+                                      ),
+                                      Text(
+                                        '$_deviceIpAddress:4444',
+                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'monospace',
+                                          color: AppColors.primary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           // Latest Alert Display
                           if (_latestAlert.isNotEmpty) ...[
                             SizedBox(height: AppConstants.spacingM),
