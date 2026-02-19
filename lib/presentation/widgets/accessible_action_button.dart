@@ -39,47 +39,55 @@ class AccessibleActionButton extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(AppConstants.radiusL),
-          child: Container(
-            padding: EdgeInsets.all(AppConstants.spacingL),
-            constraints: BoxConstraints(
-              minHeight: size * 2,
-              minWidth: size * 2,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(AppConstants.spacingL),
-                  decoration: BoxDecoration(
-                    color: buttonColor,
-                    shape: BoxShape.circle,
+            child: Container(
+              padding: EdgeInsets.all(AppConstants.spacingM),
+              constraints: BoxConstraints(
+                minHeight: size * 2,
+                minWidth: size * 2,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(AppConstants.spacingM),
+                    decoration: BoxDecoration(
+                      color: buttonColor,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      icon,
+                      size: isLarge ? AppConstants.iconXxl : AppConstants.iconL,
+                      color: Colors.white,
+                    ),
                   ),
-                  child: Icon(
-                    icon,
-                    size: isLarge ? AppConstants.iconXxl : AppConstants.iconXl,
-                    color: Colors.white,
+                  SizedBox(height: AppConstants.spacingS),
+                  Flexible(
+                    child: Text(
+                      label,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: buttonColor,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                SizedBox(height: AppConstants.spacingM),
-                Text(
-                  label,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: buttonColor,
+                  SizedBox(height: AppConstants.spacingXs),
+                  Flexible(
+                    child: Text(
+                      labelEn,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: AppConstants.spacingXs),
-                Text(
-                  labelEn,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
+                ],
+              ),
           ),
         ),
       ),

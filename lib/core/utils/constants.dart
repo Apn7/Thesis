@@ -38,4 +38,12 @@ class AppConstants {
   // Voice feedback delays
   static const Duration voiceFeedbackDelay = Duration(milliseconds: 500);
   static const Duration screenAnnouncementDelay = Duration(milliseconds: 800);
+  
+  // BLE (Bluetooth Low Energy) - must match Pi GATT server UUIDs
+  static const String bleServiceUuid = '12345678-1234-5678-1234-56789abcdef0';
+  static const String bleAlertCharUuid = '12345678-1234-5678-1234-56789abcdef1';
+  static const String bleBatteryCharUuid = '12345678-1234-5678-1234-56789abcdef2';
+  static const String bleDeviceName = 'SmartCane';
+  static const Duration bleScanTimeout = Duration(seconds: 10);
+  static const Duration bleReconnectDelay = Duration(seconds: 3);
 }

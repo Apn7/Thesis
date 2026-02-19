@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
+import '../../services/ble_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/voice_indicator.dart';
@@ -17,158 +17,72 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
+  final BleService _bleService = BleService.instance;
   bool _isInitialized = false;
-  
-  // TCP Server State
-  ServerSocket? _serverSocket;
-  Socket? _connectedClient;
-  String _connectionStatus = 'Initializing Server...';
-  String _latestAlert = '';
-  String _deviceIpAddress = 'Detecting...';
   
   @override
   void initState() {
     super.initState();
     _initializeServices();
     _setupNavigationCallback();
-    _startTcpServer();
+    _initializeBle();
   }
   
   @override
   void dispose() {
-    _stopTcpServer();
+    _bleService.disconnect();
     super.dispose();
   }
   
-  /// Starts the TCP server to listen for Raspberry Pi messages
-  Future<void> _startTcpServer() async {
-    try {
-      // Get device IP address for display
-      await _getDeviceIpAddress();
-      
-      _serverSocket = await ServerSocket.bind(InternetAddress.anyIPv4, 4444);
-      print('>> TCP SERVER LISTENING on Port 4444');
-      print('>> Device IP: $_deviceIpAddress');
-      
-      setState(() {
-        _connectionStatus = 'Waiting for Cane...';
-      });
-      
-      _serverSocket!.listen(
-        (Socket client) {
-          _connectedClient = client;
-          final clientAddress = client.remoteAddress.address;
-          print('>> CLIENT CONNECTED: $clientAddress');
-          
-          setState(() {
-            _connectionStatus = 'Connected: $clientAddress';
-          });
-          
-          // Announce connection via voice
-          _voiceService.speak('স্মার্ট ক্যান সংযুক্ত। Smart Cane connected.');
-          
-          client.listen(
-            (List<int> data) {
-              final message = String.fromCharCodes(data).trim();
-              print('>> RECEIVED: $message');
-              _handleIncomingMessage(message);
-            },
-            onError: (error) {
-              print('>> CLIENT ERROR: $error');
-              setState(() {
-                _connectionStatus = 'Connection Error';
-                _connectedClient = null;
-              });
-            },
-            onDone: () {
-              print('>> CLIENT DISCONNECTED');
-              setState(() {
-                _connectionStatus = 'Cane Disconnected';
-                _connectedClient = null;
-              });
-            },
-            cancelOnError: false,
-          );
-        },
-        onError: (error) {
-          print('>> SERVER ERROR: $error');
-          setState(() {
-            _connectionStatus = 'Server Error';
-          });
-        },
-      );
-    } catch (e) {
-      print('>> SOCKET BIND ERROR: $e');
-      setState(() {
-        _connectionStatus = 'Failed to start server: $e';
-      });
-    }
-  }
+  /// Initialize BLE service and set up alert callback
+  bool _connectionAnnounced = false;
   
-  /// Stops the TCP server and closes connections
-  void _stopTcpServer() {
-    _connectedClient?.close();
-    _serverSocket?.close();
-    _connectedClient = null;
-    _serverSocket = null;
-  }
-  
-  /// Gets the device's WiFi IP address
-  Future<void> _getDeviceIpAddress() async {
-    try {
-      final interfaces = await NetworkInterface.list(
-        type: InternetAddressType.IPv4,
-        includeLoopback: false,
-      );
-      
-      for (var interface in interfaces) {
-        // Look for WiFi interface
-        if (interface.name.toLowerCase().contains('wlan') ||
-            interface.name.toLowerCase().contains('wifi') ||
-            interface.name.toLowerCase().contains('en0') ||
-            interface.name.toLowerCase().contains('eth')) {
-          for (var addr in interface.addresses) {
-            if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
-              setState(() {
-                _deviceIpAddress = addr.address;
-              });
-              return;
-            }
-          }
+  Future<void> _initializeBle() async {
+    // Set up alert callback — when Pi sends an obstacle alert via BLE
+    _bleService.onAlertReceived = (message) {
+      _handleIncomingMessage(message);
+    };
+    
+    // Listen for BLE state changes to rebuild UI
+    _bleService.addListener(() {
+      if (mounted) {
+        setState(() {});
+        
+        // Announce connection via voice (only once per connection session)
+        if (_bleService.state == BleConnectionState.connected && !_connectionAnnounced) {
+          _connectionAnnounced = true;
+          _voiceService.speak('স্মার্ট ক্যান সংযুক্ত। Smart Cane connected via Bluetooth.');
+        } else if (_bleService.state == BleConnectionState.disconnected && _connectionAnnounced) {
+          _connectionAnnounced = false;
         }
       }
-      
-      // Fallback: use any IPv4 address found
-      for (var interface in interfaces) {
-        for (var addr in interface.addresses) {
-          if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
-            setState(() {
-              _deviceIpAddress = addr.address;
-            });
-            return;
-          }
-        }
-      }
-      
-      setState(() {
-        _deviceIpAddress = 'Not found';
-      });
-    } catch (e) {
-      print('>> Failed to get IP: $e');
-      setState(() {
-        _deviceIpAddress = 'Error: $e';
-      });
-    }
-  }
-  
-  /// Handles incoming messages from the Raspberry Pi
-  void _handleIncomingMessage(String message) {
-    setState(() {
-      _latestAlert = message;
     });
     
-    // Speak the alert (logged to console in stub mode)
-    _voiceService.speak(message);
+    await _bleService.initialize();
+  }
+  
+  /// Handles incoming messages from the Raspberry Pi (via BLE)
+  /// Format from Pi: "LEVEL:OBJECT_NAME:CONFIDENCE:POSITION"
+  void _handleIncomingMessage(String message) {
+    if (!mounted) return;
+    
+    final alert = BleAlert.parse(message);
+    
+    // Build human-readable speech string
+    String speechText;
+    if (alert.objectName.isNotEmpty && alert.position.isNotEmpty) {
+      speechText = '${alert.level}: ${alert.objectName} detected at ${alert.position}';
+    } else {
+      speechText = message;
+    }
+    
+    // Speak the alert
+    _voiceService.speak(speechText);
+    
+    // Show critical alert dialog for immediate-danger obstacles
+    if (alert.isCritical) {
+      _showCriticalAlertDialog(alert.displayMessage);
+    }
   }
   
   /// Shows a critical alert dialog for emergency warnings
@@ -446,18 +360,20 @@ class _HomeScreenState extends State<HomeScreen> {
                   
                   SizedBox(height: AppConstants.spacingL),
                   
-                  // TCP Connection Status Card
+                  // BLE Connection Status Card
                   Card(
                     elevation: 4,
-                    color: _connectedClient != null 
+                    color: _bleService.isConnected
                         ? AppColors.success.withOpacity(0.1)
                         : Theme.of(context).colorScheme.surface,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(AppConstants.radiusM),
                       side: BorderSide(
-                        color: _connectedClient != null 
+                        color: _bleService.isConnected
                             ? AppColors.success 
-                            : AppColors.primary.withOpacity(0.3),
+                            : _bleService.state == BleConnectionState.bluetoothOff
+                                ? AppColors.error.withOpacity(0.5)
+                                : AppColors.primary.withOpacity(0.3),
                         width: 2,
                       ),
                     ),
@@ -470,12 +386,20 @@ class _HomeScreenState extends State<HomeScreen> {
                           Row(
                             children: [
                               Icon(
-                                _connectedClient != null 
-                                    ? Icons.wifi 
-                                    : Icons.wifi_off,
-                                color: _connectedClient != null 
+                                _bleService.isConnected 
+                                    ? Icons.bluetooth_connected
+                                    : _bleService.state == BleConnectionState.bluetoothOff
+                                        ? Icons.bluetooth_disabled
+                                        : _bleService.isScanning
+                                            ? Icons.bluetooth_searching
+                                            : Icons.bluetooth,
+                                color: _bleService.isConnected 
                                     ? AppColors.success 
-                                    : AppColors.warning,
+                                    : _bleService.state == BleConnectionState.bluetoothOff
+                                        ? AppColors.error
+                                        : _bleService.isScanning
+                                            ? AppColors.info
+                                            : AppColors.warning,
                                 size: 28,
                               ),
                               SizedBox(width: AppConstants.spacingM),
@@ -484,16 +408,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      'ক্যান কানেকশন / Cane Connection',
+                                      'ব্লুটুথ কানেকশন / BLE Connection',
                                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                     SizedBox(height: AppConstants.spacingXs),
                                     Text(
-                                      _connectionStatus,
+                                      _bleService.statusMessage,
                                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                        color: _connectedClient != null 
+                                        color: _bleService.isConnected 
                                             ? AppColors.success 
                                             : AppColors.textSecondary,
                                         fontWeight: FontWeight.w500,
@@ -508,12 +432,14 @@ class _HomeScreenState extends State<HomeScreen> {
                                 height: 12,
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: _connectedClient != null 
+                                  color: _bleService.isConnected 
                                       ? AppColors.success 
-                                      : AppColors.warning,
+                                      : _bleService.state == BleConnectionState.bluetoothOff
+                                          ? AppColors.error
+                                          : AppColors.warning,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: (_connectedClient != null 
+                                      color: (_bleService.isConnected 
                                           ? AppColors.success 
                                           : AppColors.warning).withOpacity(0.5),
                                       blurRadius: 8,
@@ -525,98 +451,115 @@ class _HomeScreenState extends State<HomeScreen> {
                             ],
                           ),
                           
-                          // Device IP Address Display (for Raspberry Pi configuration)
-                          SizedBox(height: AppConstants.spacingM),
-                          Container(
-                            width: double.infinity,
-                            padding: EdgeInsets.all(AppConstants.spacingS),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(AppConstants.radiusS),
-                              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.lan, color: AppColors.primary, size: 18),
-                                SizedBox(width: AppConstants.spacingS),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Connect Pi to / পাই কানেক্ট করুন:',
-                                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                      Text(
-                                        '$_deviceIpAddress:4444',
-                                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          fontFamily: 'monospace',
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                          // Scan/Reconnect Button
+                          if (!_bleService.isConnected && _bleService.state != BleConnectionState.scanning) ...[
+                            SizedBox(height: AppConstants.spacingM),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () => _bleService.startScanning(),
+                                icon: const Icon(Icons.bluetooth_searching),
+                                label: const Text('Scan for Smart Cane / স্ক্যান করুন'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.primary,
+                                  side: BorderSide(color: AppColors.primary),
+                                  padding: EdgeInsets.symmetric(vertical: AppConstants.spacingM),
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
+                          
+                          // Scanning progress indicator
+                          if (_bleService.isScanning) ...[
+                            SizedBox(height: AppConstants.spacingM),
+                            const LinearProgressIndicator(),
+                          ],
+                          
                           // Latest Alert Display
-                          if (_latestAlert.isNotEmpty) ...[
+                          if (_bleService.latestAlert.isNotEmpty) ...[
                             SizedBox(height: AppConstants.spacingM),
                             Divider(color: AppColors.primary.withOpacity(0.2)),
                             SizedBox(height: AppConstants.spacingM),
-                            Container(
-                              width: double.infinity,
-                              padding: EdgeInsets.all(AppConstants.spacingM),
-                              decoration: BoxDecoration(
-                                color: _latestAlert.toUpperCase().contains('CRITICAL')
-                                    ? AppColors.error.withOpacity(0.15)
-                                    : AppColors.info.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(AppConstants.radiusS),
-                                border: Border.all(
-                                  color: _latestAlert.toUpperCase().contains('CRITICAL')
-                                      ? AppColors.error.withOpacity(0.5)
-                                      : AppColors.info.withOpacity(0.3),
-                                ),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
+                            Builder(
+                              builder: (context) {
+                                final alert = _bleService.latestParsedAlert;
+                                final isCritical = alert?.isCritical ?? false;
+                                final isWarning = alert?.isWarning ?? false;
+                                
+                                // Pick color based on danger level
+                                final alertColor = isCritical 
+                                    ? AppColors.error 
+                                    : isWarning 
+                                        ? AppColors.warning 
+                                        : AppColors.info;
+                                
+                                return Container(
+                                  width: double.infinity,
+                                  padding: EdgeInsets.all(AppConstants.spacingM),
+                                  decoration: BoxDecoration(
+                                    color: alertColor.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(AppConstants.radiusS),
+                                    border: Border.all(
+                                      color: alertColor.withOpacity(0.5),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Icon(
-                                        _latestAlert.toUpperCase().contains('CRITICAL')
-                                            ? Icons.warning_amber_rounded
-                                            : Icons.notifications_active,
-                                        color: _latestAlert.toUpperCase().contains('CRITICAL')
-                                            ? AppColors.error
-                                            : AppColors.info,
-                                        size: 20,
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            isCritical 
+                                                ? Icons.warning_amber_rounded
+                                                : isWarning
+                                                    ? Icons.error_outline
+                                                    : Icons.notifications_active,
+                                            color: alertColor,
+                                            size: 20,
+                                          ),
+                                          SizedBox(width: AppConstants.spacingS),
+                                          Expanded(
+                                            child: Text(
+                                              alert != null 
+                                                  ? '${alert.level} — ${alert.position}'
+                                                  : 'সর্বশেষ সতর্কতা / Latest Alert',
+                                              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                                fontWeight: FontWeight.bold,
+                                                color: alertColor,
+                                              ),
+                                            ),
+                                          ),
+                                          if (alert?.confidence.isNotEmpty ?? false)
+                                            Container(
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: AppConstants.spacingS,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: alertColor.withOpacity(0.2),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                alert!.confidence,
+                                                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                                  color: alertColor,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
                                       ),
-                                      SizedBox(width: AppConstants.spacingS),
+                                      SizedBox(height: AppConstants.spacingS),
                                       Text(
-                                        'সর্বশেষ সতর্কতা / Latest Alert',
-                                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: _latestAlert.toUpperCase().contains('CRITICAL')
-                                              ? AppColors.error
-                                              : AppColors.info,
+                                        alert?.displayMessage ?? _bleService.latestAlert,
+                                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
                                     ],
                                   ),
-                                  SizedBox(height: AppConstants.spacingS),
-                                  Text(
-                                    _latestAlert,
-                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                );
+                              },
                             ),
                           ],
                         ],

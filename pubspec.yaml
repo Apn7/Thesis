@@ -53,6 +53,9 @@ dependencies:
   
   # Permissions
   permission_handler: ^11.3.0
+  
+  # Bluetooth Low Energy (BLE) for Smart Cane communication
+  flutter_blue_plus: ^1.35.0
 
 dev_dependencies:
   flutter_test:
