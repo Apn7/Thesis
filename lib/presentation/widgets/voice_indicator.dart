@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/constants.dart';
 
 /// Animated voice activity indicator
 class VoiceIndicator extends StatefulWidget {

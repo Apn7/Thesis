@@ -1,6 +1,3 @@
-import 'dart:io' show Platform;
-import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Conditionally import flutter_tts only for non-Windows platforms
 // For Windows, we use a stub implementation due to CMake issues
