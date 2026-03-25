@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_routes.dart';
 import 'presentation/screens/home_screen.dart';
@@ -7,8 +8,11 @@ import 'presentation/screens/location_screen.dart';
 import 'presentation/screens/settings_screen.dart';
 import 'presentation/screens/help_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment variables from .env
+  await dotenv.load(fileName: ".env");
   
   // Set preferred orientations (portrait only for accessibility)
   SystemChrome.setPreferredOrientations([
