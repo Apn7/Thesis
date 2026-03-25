@@ -58,3 +58,5 @@ app.*.map.json
 
 # IDE project files
 *.iml
+
+assets/models/*.bin
