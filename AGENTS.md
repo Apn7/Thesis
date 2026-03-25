@@ -139,8 +139,8 @@ flutter build ios
 
 ## Security And Config
 - Do not add new secrets to source files.
-- `lib/core/config/api_config.dart` currently contains a checked-in API key; do not repeat or expose it in logs/docs/tests.
-- If you touch API config, prefer `--dart-define` or another environment-driven approach.
+- `lib/core/config/api_config.dart` safely loads the API key from a `.env` file; do not expose or require it in logs/docs/tests.
+- If you touch API config, prefer using `.env` or `--dart-define`.
 - Be careful about logging full third-party responses.
 
 ## Practical Editing Advice

@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(flutter pub:*)"
+      "Bash(flutter pub:*)",
+      "WebFetch(domain:pub.dev)",
+      "WebSearch"
     ]
   }
 }

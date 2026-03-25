@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_routes.dart';
 import 'presentation/screens/home_screen.dart';
@@ -10,6 +11,9 @@ import 'presentation/screens/help_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Required by sherpa_onnx before any recognizer can be created.
+  sherpa.initBindings();
 
   // Load environment variables from .env
   await dotenv.load(fileName: ".env");
