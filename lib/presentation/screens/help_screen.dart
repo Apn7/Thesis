@@ -5,7 +5,7 @@ import '../../core/utils/constants.dart';
 /// Help screen with tutorials and command list
 class HelpScreen extends StatelessWidget {
   const HelpScreen({super.key});
-  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -16,10 +16,7 @@ class HelpScreen extends StatelessWidget {
           child: const Column(
             children: [
               Text('সাহায্য'),
-              Text(
-                'Help',
-                style: TextStyle(fontSize: 12),
-              ),
+              Text('Help', style: TextStyle(fontSize: 12)),
             ],
           ),
         ),
@@ -44,10 +41,11 @@ class HelpScreen extends StatelessWidget {
                     SizedBox(height: AppConstants.spacingL),
                     Text(
                       'স্বাগতম!',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary,
-                      ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
                     ),
                     SizedBox(height: AppConstants.spacingXs),
                     Text(
@@ -71,12 +69,12 @@ class HelpScreen extends StatelessWidget {
                 ),
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Quick Start Guide
             _buildSectionHeader(context, 'দ্রুত শুরু / Quick Start'),
-            
+
             _buildStepCard(
               context,
               step: '১',
@@ -88,7 +86,7 @@ class HelpScreen extends StatelessWidget {
               icon: Icons.home,
               color: AppColors.primary,
             ),
-            
+
             _buildStepCard(
               context,
               step: '২',
@@ -100,7 +98,7 @@ class HelpScreen extends StatelessWidget {
               icon: Icons.mic,
               color: AppColors.accent,
             ),
-            
+
             _buildStepCard(
               context,
               step: '৩',
@@ -112,12 +110,12 @@ class HelpScreen extends StatelessWidget {
               icon: Icons.volume_up,
               color: AppColors.info,
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Voice Commands List
             _buildSectionHeader(context, 'ভয়েস কমান্ড / Voice Commands'),
-            
+
             Card(
               child: Column(
                 children: [
@@ -168,12 +166,12 @@ class HelpScreen extends StatelessWidget {
                 ],
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Tips Section
             _buildSectionHeader(context, 'টিপস / Tips'),
-            
+
             _buildTipCard(
               context,
               icon: Icons.lightbulb_outline,
@@ -181,7 +179,7 @@ class HelpScreen extends StatelessWidget {
               tipEn: 'Speak clearly and slowly',
               color: AppColors.warning,
             ),
-            
+
             _buildTipCard(
               context,
               icon: Icons.headphones,
@@ -189,7 +187,7 @@ class HelpScreen extends StatelessWidget {
               tipEn: 'Use in a quiet environment',
               color: AppColors.info,
             ),
-            
+
             _buildTipCard(
               context,
               icon: Icons.battery_charging_full,
@@ -197,9 +195,9 @@ class HelpScreen extends StatelessWidget {
               tipEn: 'Battery saver mode conserves more battery',
               color: AppColors.success,
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Support Section
             Card(
               elevation: 2,
@@ -252,7 +250,7 @@ class HelpScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildSectionHeader(BuildContext context, String title) {
     return Semantics(
       header: true,
@@ -264,14 +262,14 @@ class HelpScreen extends StatelessWidget {
         ),
         child: Text(
           title,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
     );
   }
-  
+
   Widget _buildStepCard(
     BuildContext context, {
     required String step,
@@ -293,10 +291,7 @@ class HelpScreen extends StatelessWidget {
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
               child: Center(
                 child: Text(
                   step,
@@ -341,7 +336,7 @@ class HelpScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildCommandTile(
     String command,
     String commandEn,
@@ -368,7 +363,7 @@ class HelpScreen extends StatelessWidget {
       ),
     );
   }
-  
+
   Widget _buildTipCard(
     BuildContext context, {
     required IconData icon,

@@ -56,16 +56,14 @@ dependencies:
   
   # Bluetooth Low Energy (BLE) for Smart Cane communication
   flutter_blue_plus: ^1.35.0
-  whisper_ggml: ^1.7.0
   record: ^6.2.0
+  shared_preferences: ^2.3.5
   path_provider: ^2.1.5
   flutter_dotenv: ^5.2.1
 
   # Offline Bengali STT (sherpa-onnx zipformer)
   sherpa_onnx: ^1.12.33
 
-  # Tarball extraction for sherpa model download
-  archive: ^3.6.1
 
 dev_dependencies:
   flutter_test:
@@ -92,7 +90,9 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - .env
-    - assets/models/
+    - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
+    - assets/models/sherpa-onnx-streaming-zipformer-en-2023-06-26/
+    - assets/models/sherpa-onnx-whisper-tiny/
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

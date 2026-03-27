@@ -20,8 +20,10 @@ class LocationData {
     required this.timestamp,
   });
 
-  String get latitudeFormatted => '${latitude.toStringAsFixed(4)}° ${latitude >= 0 ? 'N' : 'S'}';
-  String get longitudeFormatted => '${longitude.toStringAsFixed(4)}° ${longitude >= 0 ? 'E' : 'W'}';
+  String get latitudeFormatted =>
+      '${latitude.toStringAsFixed(4)}° ${latitude >= 0 ? 'N' : 'S'}';
+  String get longitudeFormatted =>
+      '${longitude.toStringAsFixed(4)}° ${longitude >= 0 ? 'E' : 'W'}';
 }
 
 /// Service for handling GPS location and reverse geocoding
@@ -78,7 +80,10 @@ class LocationService {
       debugPrint('Got position: ${position.latitude}, ${position.longitude}');
 
       // Get address using HTTP-based geocoding (works on all platforms including web)
-      final address = await _reverseGeocodeHTTP(position.latitude, position.longitude);
+      final address = await _reverseGeocodeHTTP(
+        position.latitude,
+        position.longitude,
+      );
 
       return LocationData(
         latitude: position.latitude,
@@ -97,54 +102,57 @@ class LocationService {
   Future<String> _reverseGeocodeHTTP(double lat, double lon) async {
     try {
       debugPrint('Attempting HTTP reverse geocoding for: $lat, $lon');
-      
+
       // Using OpenStreetMap Nominatim API (free, no API key required)
       final url = Uri.parse(
-        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1'
+        'https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon&zoom=18&addressdetails=1',
       );
-      
-      final response = await http.get(
-        url,
-        headers: {
-          'User-Agent': 'SmartCaneApp/1.0', // Required by Nominatim
-          'Accept-Language': 'en,bn', // Request English and Bengali
-        },
-      ).timeout(const Duration(seconds: 10));
-      
+
+      final response = await http
+          .get(
+            url,
+            headers: {
+              'User-Agent': 'SmartCaneApp/1.0', // Required by Nominatim
+              'Accept-Language': 'en,bn', // Request English and Bengali
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        
+
         debugPrint('Nominatim response: ${response.body}');
-        
+
         // Get display name (full formatted address)
         if (data.containsKey('display_name')) {
           final displayName = data['display_name'] as String;
           debugPrint('Address found: $displayName');
           return displayName;
         }
-        
+
         // Fallback: build address from parts
         if (data.containsKey('address')) {
           final address = data['address'] as Map<String, dynamic>;
           final parts = <String>[];
-          
+
           // Add relevant address parts
           if (address['road'] != null) parts.add(address['road']);
-          if (address['neighbourhood'] != null) parts.add(address['neighbourhood']);
+          if (address['neighbourhood'] != null)
+            parts.add(address['neighbourhood']);
           if (address['suburb'] != null) parts.add(address['suburb']);
           if (address['city'] != null) parts.add(address['city']);
           if (address['town'] != null) parts.add(address['town']);
           if (address['village'] != null) parts.add(address['village']);
           if (address['state'] != null) parts.add(address['state']);
           if (address['country'] != null) parts.add(address['country']);
-          
+
           if (parts.isNotEmpty) {
             final formattedAddress = parts.join(', ');
             debugPrint('Address built from parts: $formattedAddress');
             return formattedAddress;
           }
         }
-        
+
         return 'Address not available';
       } else {
         debugPrint('Nominatim API error: ${response.statusCode}');

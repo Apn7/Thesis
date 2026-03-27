@@ -11,7 +11,7 @@ class InfoCard extends StatelessWidget {
   final Color? color;
   final VoidCallback? onTap;
   final String? semanticLabel;
-  
+
   const InfoCard({
     super.key,
     required this.icon,
@@ -22,11 +22,11 @@ class InfoCard extends StatelessWidget {
     this.onTap,
     this.semanticLabel,
   });
-  
+
   @override
   Widget build(BuildContext context) {
     final cardColor = color ?? AppColors.primary;
-    
+
     return Semantics(
       label: semanticLabel ?? '$title, $titleEn: $value',
       button: onTap != null,
@@ -45,11 +45,7 @@ class InfoCard extends StatelessWidget {
                     color: cardColor.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(AppConstants.radiusM),
                   ),
-                  child: Icon(
-                    icon,
-                    size: AppConstants.iconL,
-                    color: cardColor,
-                  ),
+                  child: Icon(icon, size: AppConstants.iconL, color: cardColor),
                 ),
                 SizedBox(width: AppConstants.spacingL),
                 Expanded(

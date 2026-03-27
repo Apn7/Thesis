@@ -1,22 +1,46 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import '../../services/settings_service.dart';
 
 /// Settings screen for app configuration
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
-  
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _selectedLanguage = 'both'; // 'bangla', 'english', 'both'
+  late String _selectedLanguage; // 'bangla', 'english', 'both'
   double _speechRate = 1.0;
   bool _vibrationEnabled = true;
   bool _voiceConfirmationEnabled = true;
   bool _batterySaverMode = false;
-  
+
+  @override
+  void initState() {
+    super.initState();
+    // Map stored locale back to UI string.
+    final stored = SettingsService.instance.languageMode;
+    _selectedLanguage = stored == 'bn'
+        ? 'bangla'
+        : stored == 'en'
+        ? 'english'
+        : 'both';
+  }
+
+  void _onLanguageChanged(String? value) {
+    if (value == null) return;
+    setState(() => _selectedLanguage = value);
+    final locale = value == 'bangla'
+        ? 'bn'
+        : value == 'english'
+        ? 'en'
+        : 'both';
+    SettingsService.instance.setLanguageMode(locale);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -27,10 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           child: const Column(
             children: [
               Text('সেটিংস'),
-              Text(
-                'Settings',
-                style: TextStyle(fontSize: 12),
-              ),
+              Text('Settings', style: TextStyle(fontSize: 12)),
             ],
           ),
         ),
@@ -41,7 +62,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             // Language Section
             _buildSectionHeader(context, 'ভাষা / Language'),
-            
+
             Card(
               child: Column(
                 children: [
@@ -49,11 +70,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('শুধু বাংলা / Bangla Only'),
                     value: 'bangla',
                     groupValue: _selectedLanguage,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedLanguage = value!;
-                      });
-                    },
+                    onChanged: _onLanguageChanged,
                     secondary: const Icon(Icons.language),
                   ),
                   const Divider(height: 1),
@@ -61,11 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('শুধু ইংরেজি / English Only'),
                     value: 'english',
                     groupValue: _selectedLanguage,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedLanguage = value!;
-                      });
-                    },
+                    onChanged: _onLanguageChanged,
                     secondary: const Icon(Icons.translate),
                   ),
                   const Divider(height: 1),
@@ -74,22 +87,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: const Text('প্রস্তাবিত / Recommended'),
                     value: 'both',
                     groupValue: _selectedLanguage,
-                    onChanged: (value) {
-                      setState(() {
-                        _selectedLanguage = value!;
-                      });
-                    },
+                    onChanged: _onLanguageChanged,
                     secondary: const Icon(Icons.g_translate),
                   ),
                 ],
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Voice Settings
             _buildSectionHeader(context, 'ভয়েস সেটিংস / Voice Settings'),
-            
+
             Card(
               child: Column(
                 children: [
@@ -109,9 +118,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   const Text('কথা বলার গতি / Speech Rate'),
                                   Text(
                                     '${(_speechRate * 100).round()}%',
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
+                                    style: Theme.of(context).textTheme.bodySmall
+                                        ?.copyWith(
+                                          color: AppColors.textSecondary,
+                                        ),
                                   ),
                                 ],
                               ),
@@ -148,12 +158,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // Accessibility Settings
             _buildSectionHeader(context, 'অ্যাক্সেসিবিলিটি / Accessibility'),
-            
+
             Card(
               child: Column(
                 children: [
@@ -183,12 +193,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXl),
-            
+
             // About Section
             _buildSectionHeader(context, 'সম্পর্কে / About'),
-            
+
             Card(
               child: Column(
                 children: [
@@ -225,9 +235,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
-            
+
             SizedBox(height: AppConstants.spacingXxl),
-            
+
             // Reset Button
             OutlinedButton.icon(
               onPressed: () {
@@ -248,7 +258,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-  
+
   Widget _buildSectionHeader(BuildContext context, String title) {
     return Semantics(
       header: true,
@@ -260,14 +270,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         child: Text(
           title,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+          style: Theme.of(
+            context,
+          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
         ),
       ),
     );
   }
-  
+
   void _showAboutDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -307,7 +317,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-  
+
   void _showResetDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -330,6 +340,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _voiceConfirmationEnabled = true;
                 _batterySaverMode = false;
               });
+              SettingsService.instance.setLanguageMode('both');
               Navigator.pop(context);
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
@@ -337,9 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               );
             },
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.error,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('রিসেট / Reset'),
           ),
         ],

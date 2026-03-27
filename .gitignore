@@ -60,3 +60,9 @@ app.*.map.json
 *.iml
 
 assets/models/*.bin
+assets/models/**/*.onnx
+assets/models/**/*.txt
+
+# AI Agents
+.agents/
+.agent/

@@ -8,6 +8,7 @@ import 'presentation/screens/home_screen.dart';
 import 'presentation/screens/location_screen.dart';
 import 'presentation/screens/settings_screen.dart';
 import 'presentation/screens/help_screen.dart';
+import 'presentation/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,13 +18,13 @@ void main() async {
 
   // Load environment variables from .env
   await dotenv.load(fileName: ".env");
-  
+
   // Set preferred orientations (portrait only for accessibility)
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
+
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -31,7 +32,7 @@ void main() async {
       statusBarIconBrightness: Brightness.light,
     ),
   );
-  
+
   runApp(const SmartCaneApp());
 }
 
@@ -43,24 +44,24 @@ class SmartCaneApp extends StatelessWidget {
     return MaterialApp(
       title: 'স্মার্ট ক্যান • Smart Cane',
       debugShowCheckedModeBanner: false,
-      
+
       // Theme
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,
-      
+
       // Accessibility
-      showSemanticsDebugger: false, // Set to true for debugging accessibility  
-      
+      showSemanticsDebugger: false, // Set to true for debugging accessibility
       // Navigation
-      initialRoute: AppRoutes.home,
+      initialRoute: AppRoutes.splash,
       routes: {
+        AppRoutes.splash: (context) => const SplashScreen(),
         AppRoutes.home: (context) => const HomeScreen(),
         AppRoutes.location: (context) => const LocationScreen(),
         AppRoutes.settings: (context) => const SettingsScreen(),
         AppRoutes.help: (context) => const HelpScreen(),
       },
-      
+
       // Error handling
       builder: (context, child) {
         // Ensure text scale factor doesn't exceed 2.0 for layout stability
@@ -70,10 +71,7 @@ class SmartCaneApp extends StatelessWidget {
             mediaQueryData.textScaler.scale(1.0).clamp(0.8, 2.0),
           ),
         );
-        return MediaQuery(
-          data: scaledMediaQueryData,
-          child: child!,
-        );
+        return MediaQuery(data: scaledMediaQueryData, child: child!);
       },
     );
   }

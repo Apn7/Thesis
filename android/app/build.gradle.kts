@@ -30,6 +30,12 @@ android {
         versionName = flutter.versionName
     }
 
+    androidResources {
+        // Prevent Android from compressing large model files — they are already
+        // optimal binary formats and compression would corrupt/bloat them.
+        noCompress += listOf("onnx", "txt", "tflite")
+    }
+
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.

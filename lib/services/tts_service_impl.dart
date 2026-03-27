@@ -18,18 +18,20 @@ TtsService createTtsService() {
 class TtsServiceWindowsStub extends TtsService {
   bool _isSpeaking = false;
   String _currentLanguage = 'en-US';
-  
+
   @override
   bool get isSpeaking => _isSpeaking;
-  
+
   @override
   String get currentLanguage => _currentLanguage;
-  
+
   @override
   Future<void> initialize() async {
-    debugPrint('[TTS] Initialized (Windows stub mode - TTS disabled for thesis demo)');
+    debugPrint(
+      '[TTS] Initialized (Windows stub mode - TTS disabled for thesis demo)',
+    );
   }
-  
+
   @override
   Future<void> speak(String text) async {
     debugPrint('[TTS] 🔊 "$text"');
@@ -39,18 +41,18 @@ class TtsServiceWindowsStub extends TtsService {
     await Future.delayed(Duration(milliseconds: duration));
     _isSpeaking = false;
   }
-  
+
   @override
   Future<void> stop() async {
     _isSpeaking = false;
     debugPrint('[TTS] Stopped');
   }
-  
+
   @override
   Future<void> setSpeechRate(double rate) async {
     debugPrint('[TTS] Speech rate set to $rate');
   }
-  
+
   @override
   Future<void> setLanguage(String language) async {
     _currentLanguage = language;

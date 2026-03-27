@@ -9,8 +9,9 @@ class ApiConfig {
   static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
 
   // Models
-  static const String whisperModel = 'whisper-large-v3';  // For STT
-  static const String llamaModel = 'llama-3.3-70b-versatile';  // For intent understanding
+  static const String whisperModel = 'whisper-large-v3'; // For STT
+  static const String llamaModel =
+      'llama-3.3-70b-versatile'; // For intent understanding
 
   // System prompt for voice navigation
   static const String systemPrompt = '''
