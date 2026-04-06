@@ -13,21 +13,31 @@ class SettingsService extends ChangeNotifier {
 
   static const _kLangKey = 'stt_language_mode';
 
-  /// One of `'bn'`, `'en'`, or `'both'`.
-  String _languageMode = 'both';
+  /// One of `'bn'` (Bangla, default) or `'en'` (English via Android STT).
+  String _languageMode = 'bn';
 
   String get languageMode => _languageMode;
 
   /// Load persisted settings.  Call once at app startup.
+  ///
+  /// Migrates any legacy `'both'` value (from the previous SLI-based
+  /// implementation) to `'bn'` so existing users don't end up in an
+  /// unsupported state.
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    _languageMode = prefs.getString(_kLangKey) ?? 'both';
+    final stored = prefs.getString(_kLangKey) ?? 'bn';
+    // Migrate legacy 'both' → 'bn'
+    _languageMode = (stored == 'bn' || stored == 'en') ? stored : 'bn';
     debugPrint('SettingsService: loaded languageMode = $_languageMode');
   }
 
   /// Update the language mode, persist it, notify listeners, and
   /// propagate to [SpeechService].
   Future<void> setLanguageMode(String mode) async {
+    assert(
+      mode == 'bn' || mode == 'en',
+      'setLanguageMode: mode must be bn or en',
+    );
     if (mode == _languageMode) return;
     _languageMode = mode;
     notifyListeners();

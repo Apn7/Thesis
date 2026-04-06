@@ -31,10 +31,6 @@ class ModelAssetManager {
   static Future<String> ensureSherpaModel(SherpaModelConfig config) =>
       _ensure(config.modelDirName, config.modelFiles);
 
-  /// Ensure all files for the SLI [config] are present and return the dir.
-  static Future<String> ensureSliModel(SliModelConfig config) =>
-      _ensure(config.modelDirName, config.modelFiles);
-
   static Future<String> _ensure(
     String modelDirName,
     Map<String, int> files,

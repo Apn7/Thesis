@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../services/settings_service.dart';
@@ -12,7 +13,7 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late String _selectedLanguage; // 'bangla', 'english', 'both'
+  late String _selectedLanguage; // 'bangla' | 'english'
   double _speechRate = 1.0;
   bool _vibrationEnabled = true;
   bool _voiceConfirmationEnabled = true;
@@ -22,22 +23,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     // Map stored locale back to UI string.
+    // Any legacy 'both' value is already migrated to 'bn' by SettingsService.
     final stored = SettingsService.instance.languageMode;
-    _selectedLanguage = stored == 'bn'
-        ? 'bangla'
-        : stored == 'en'
-        ? 'english'
-        : 'both';
+    _selectedLanguage = stored == 'en' ? 'english' : 'bangla';
   }
 
   void _onLanguageChanged(String? value) {
     if (value == null) return;
     setState(() => _selectedLanguage = value);
-    final locale = value == 'bangla'
-        ? 'bn'
-        : value == 'english'
-        ? 'en'
-        : 'both';
+    final locale = value == 'english' ? 'en' : 'bn';
     SettingsService.instance.setLanguageMode(locale);
   }
 
@@ -60,43 +54,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           padding: EdgeInsets.all(AppConstants.spacingL),
           children: [
-            // Language Section
+            // ── Language Section ──────────────────────────────────────
             _buildSectionHeader(context, 'ভাষা / Language'),
 
             Card(
               child: Column(
                 children: [
-                  RadioListTile<String>(
-                    title: const Text('শুধু বাংলা / Bangla Only'),
-                    value: 'bangla',
-                    groupValue: _selectedLanguage,
-                    onChanged: _onLanguageChanged,
-                    secondary: const Icon(Icons.language),
+                  Semantics(
+                    label:
+                        'শুধু বাংলা ভয়েস রিকগনিশন। Bangla only voice recognition.',
+                    child: RadioListTile<String>(
+                      title: const Text('শুধু বাংলা / Bangla Only'),
+                      subtitle: const Text(
+                        'ডিফল্ট · অফলাইন / Default · Offline',
+                      ),
+                      value: 'bangla',
+                      groupValue: _selectedLanguage,
+                      onChanged: _onLanguageChanged,
+                      secondary: const Icon(Icons.language),
+                    ),
                   ),
                   const Divider(height: 1),
-                  RadioListTile<String>(
-                    title: const Text('শুধু ইংরেজি / English Only'),
-                    value: 'english',
-                    groupValue: _selectedLanguage,
-                    onChanged: _onLanguageChanged,
-                    secondary: const Icon(Icons.translate),
-                  ),
-                  const Divider(height: 1),
-                  RadioListTile<String>(
-                    title: const Text('উভয় / Both'),
-                    subtitle: const Text('প্রস্তাবিত / Recommended'),
-                    value: 'both',
-                    groupValue: _selectedLanguage,
-                    onChanged: _onLanguageChanged,
-                    secondary: const Icon(Icons.g_translate),
+                  Semantics(
+                    label:
+                        'শুধু ইংরেজি ভয়েস রিকগনিশন, অ্যান্ড্রয়েড বিল্ট-ইন ব্যবহার করে। '
+                        'English only, uses Android built-in speech recognizer.',
+                    child: RadioListTile<String>(
+                      title: const Text('শুধু ইংরেজি / English Only'),
+                      subtitle: const Text(
+                        'অ্যান্ড্রয়েড বিল্ট-ইন STT · অফলাইন\n'
+                        'Android built-in STT · Offline',
+                      ),
+                      value: 'english',
+                      groupValue: _selectedLanguage,
+                      onChanged: _onLanguageChanged,
+                      secondary: const Icon(Icons.translate),
+                      isThreeLine: true,
+                    ),
                   ),
                 ],
               ),
             ),
 
+            // Info banner shown when English is selected
+            if (_selectedLanguage == 'english') ...[
+              SizedBox(height: AppConstants.spacingM),
+              _buildEnglishInfoBanner(context),
+            ],
+
             SizedBox(height: AppConstants.spacingXl),
 
-            // Voice Settings
+            // ── Voice Settings ────────────────────────────────────────
             _buildSectionHeader(context, 'ভয়েস সেটিংস / Voice Settings'),
 
             Card(
@@ -161,7 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             SizedBox(height: AppConstants.spacingXl),
 
-            // Accessibility Settings
+            // ── Accessibility Settings ────────────────────────────────
             _buildSectionHeader(context, 'অ্যাক্সেসিবিলিটি / Accessibility'),
 
             Card(
@@ -196,7 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             SizedBox(height: AppConstants.spacingXl),
 
-            // About Section
+            // ── About Section ─────────────────────────────────────────
             _buildSectionHeader(context, 'সম্পর্কে / About'),
 
             Card(
@@ -238,7 +246,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             SizedBox(height: AppConstants.spacingXxl),
 
-            // Reset Button
+            // ── Reset Button ──────────────────────────────────────────
             OutlinedButton.icon(
               onPressed: () {
                 _showResetDialog(context);
@@ -251,6 +259,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.warning),
                 padding: EdgeInsets.symmetric(vertical: AppConstants.spacingL),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Info banner shown when the English STT option is selected.
+  Widget _buildEnglishInfoBanner(BuildContext context) {
+    return Semantics(
+      label:
+          'তথ্য: ইংরেজি মোড আপনার ফোনের বিল্ট-ইন ভয়েস রিকগনিশন ব্যবহার করে। '
+          'Info: English mode uses your phone\'s built-in voice recognition.',
+      child: Container(
+        padding: EdgeInsets.all(AppConstants.spacingM),
+        decoration: BoxDecoration(
+          color: AppColors.info.withAlpha(30),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.info.withAlpha(80)),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: AppColors.info, size: 20),
+            SizedBox(width: AppConstants.spacingM),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ইংরেজি মোড আপনার ফোনের বিল্ট-ইন অফলাইন ভয়েস রিকগনিশন ব্যবহার করে।',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  SizedBox(height: AppConstants.spacingXs),
+                  Text(
+                    'English mode uses your phone\'s built-in offline speech recognizer. '
+                    'If unavailable, please switch back to Bangla.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -334,19 +385,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
           FilledButton(
             onPressed: () {
               setState(() {
-                _selectedLanguage = 'both';
+                _selectedLanguage = 'bangla'; // default is Bangla
                 _speechRate = 1.0;
                 _vibrationEnabled = true;
                 _voiceConfirmationEnabled = true;
                 _batterySaverMode = false;
               });
-              SettingsService.instance.setLanguageMode('both');
+              SettingsService.instance.setLanguageMode('bn');
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('সেটিংস রিসেট হয়েছে / Settings reset'),
-                ),
-              );
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('সেটিংস রিসেট হয়েছে / Settings reset'),
+                  ),
+                );
+              }
             },
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('রিসেট / Reset'),

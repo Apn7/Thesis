@@ -67,26 +67,22 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _copyModels() async {
-    // ── Bengali STT ──────────────────────────────────────────────
-    _update('বাংলা ভয়েস মডেল প্রস্তুত হচ্ছে...', 'Preparing Bengali voice model...', 0.05);
+    // ── Bengali STT (only bundled model — English uses Android built-in) ──
+    _update(
+      'বাংলা ভয়েস মডেল প্রস্তুত হচ্ছে...',
+      'Preparing Bengali voice model...',
+      0.05,
+    );
     await ModelAssetManager.ensureSherpaModel(kBengaliSherpaConfig);
-    _update('বাংলা মডেল প্রস্তুত ✓', 'Bengali model ready ✓', 0.40);
-
-    // ── English STT ──────────────────────────────────────────────
-    _update('ইংরেজি ভয়েস মডেল প্রস্তুত হচ্ছে...', 'Preparing English voice model...', 0.42);
-    await ModelAssetManager.ensureSherpaModel(kEnglishSherpaConfig);
-    _update('ইংরেজি মডেল প্রস্তুত ✓', 'English model ready ✓', 0.80);
-
-    // ── SLI (language detection) ─────────────────────────────────
-    _update('ভাষা শনাক্তকরণ প্রস্তুত হচ্ছে...', 'Preparing language detector...', 0.82);
-    await ModelAssetManager.ensureSliModel(kSliWhisperTinyConfig);
-    _update('সব মডেল প্রস্তুত ✓', 'All models ready ✓', 0.92);
+    _update('মডেল প্রস্তুত ✓', 'Model ready ✓', 0.80);
   }
 
   Future<void> _initServices() async {
     _update('সার্ভিস চালু হচ্ছে...', 'Starting services...', 0.94);
     await SettingsService.instance.load();
-    await SpeechService.instance.setLocale(SettingsService.instance.languageMode);
+    await SpeechService.instance.setLocale(
+      SettingsService.instance.languageMode,
+    );
     _update('প্রস্তুত!', 'Ready!', 1.0);
     // Brief pause so the user sees "Ready".
     await Future.delayed(const Duration(milliseconds: 400));
