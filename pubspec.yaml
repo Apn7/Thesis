@@ -64,6 +64,9 @@ dependencies:
   # Offline Bengali STT (sherpa-onnx zipformer)
   sherpa_onnx: ^1.12.33
 
+  # On-device LLM inference is handled via a native Android MethodChannel
+  # (LiteRT-LM SDK in MainActivity.kt) — no Flutter pub package needed.
+
 
 dev_dependencies:
   flutter_test:
@@ -91,6 +94,7 @@ flutter:
   assets:
     - .env
     - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
+    - assets/models/gemma-4-E2B-it.litertlm
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

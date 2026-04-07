@@ -62,6 +62,7 @@ app.*.map.json
 assets/models/*.bin
 assets/models/**/*.onnx
 assets/models/**/*.txt
+assets/models/
 
 # AI Agents
 .agents/

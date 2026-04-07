@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
+import '../../services/llm_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/speech_service.dart';
 import '../../services/stt/model_asset_manager.dart';
@@ -56,10 +57,11 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _setup() async {
     try {
       await _copyModels();
+      await _initLlm();
       await _initServices();
     } catch (e) {
       debugPrint('SplashScreen setup error: $e');
-      // Even on error, proceed — SpeechService handles failures gracefully.
+      // Even on error, proceed — individual services handle failures gracefully.
     }
 
     if (!mounted) return;
@@ -75,6 +77,15 @@ class _SplashScreenState extends State<SplashScreen>
     );
     await ModelAssetManager.ensureSherpaModel(kBengaliSherpaConfig);
     _update('মডেল প্রস্তুত ✓', 'Model ready ✓', 0.80);
+  }
+
+  Future<void> _initLlm() async {
+    // First launch: the Kotlin side copies ~2.58 GB from APK assets to device
+    // storage before loading the engine — this can take a minute on slow
+    // storage.  Subsequent launches skip the copy and complete in seconds.
+    _update('AI মডেল লোড হচ্ছে...', 'Loading AI model...', 0.82);
+    await LlmService.instance.init();
+    _update('AI মডেল প্রস্তুত ✓', 'AI model ready ✓', 0.92);
   }
 
   Future<void> _initServices() async {

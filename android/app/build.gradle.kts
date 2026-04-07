@@ -24,7 +24,8 @@ android {
         applicationId = "com.example.test_app_1"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // LiteRT-LM requires Android 12 (API 31) minimum.
+        minSdk = 31
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -33,7 +34,7 @@ android {
     androidResources {
         // Prevent Android from compressing large model files — they are already
         // optimal binary formats and compression would corrupt/bloat them.
-        noCompress += listOf("onnx", "txt", "tflite")
+        noCompress += listOf("onnx", "txt", "tflite", "litertlm")
     }
 
     buildTypes {
@@ -43,6 +44,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // LiteRT-LM on-device LLM inference (Gemma 4 E2B)
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 }
 
 flutter {

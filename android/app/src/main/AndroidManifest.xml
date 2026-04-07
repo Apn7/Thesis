@@ -20,6 +20,12 @@
         android:label="test_app_1"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- Optional OpenCL libraries for LiteRT-LM GPU acceleration.
+             marked required=false so the app installs on devices without GPU. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
+        <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

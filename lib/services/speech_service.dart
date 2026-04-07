@@ -38,6 +38,15 @@ class SpeechService {
   final SpeechToText _androidStt = SpeechToText();
   bool _androidSttAvailable = false;
 
+  /// Whether to request on-device recognition.  Starts true; flipped to false
+  /// permanently after the first [error_language_unavailable] so subsequent
+  /// sessions fall back to the online recognizer automatically.
+  bool _useOnDevice = true;
+
+  /// Set when [error_language_unavailable] fires mid-session so
+  /// [_startAndroidListening] can retry with onDevice:false.
+  bool _languageUnavailableRetry = false;
+
   /// Completer used to block [startListening] until the Android STT session
   /// finishes (either a final result, silence timeout, or cancellation).
   Completer<void>? _androidSttCompleter;
@@ -105,6 +114,14 @@ class SpeechService {
         debugPrint(
           'AndroidSTT error: ${error.errorMsg} (permanent=${error.permanent})',
         );
+        if (error.errorMsg == 'error_language_unavailable' && _useOnDevice) {
+          // On-device pack not installed — retry this session without it.
+          debugPrint('AndroidSTT: on-device pack unavailable, will retry online.');
+          _useOnDevice = false;
+          _languageUnavailableRetry = true;
+          _completeAndroidStt();
+          return;
+        }
         onError?.call(
           'ইংরেজি ভয়েস রিকগনিশন ত্রুটি / English STT error: ${error.errorMsg}',
         );
@@ -175,7 +192,13 @@ class SpeechService {
   }
 
   /// Start an Android STT session and wait for it to complete.
+  ///
+  /// If [error_language_unavailable] fires (on-device pack not installed),
+  /// the session retries once with [onDevice:false] (online recognizer).
+  /// After the first retry [_useOnDevice] stays false for all future sessions.
   Future<void> _startAndroidListening() async {
+    _languageUnavailableRetry = false;
+
     final completer = Completer<void>();
     _androidSttCompleter = completer;
     bool gotFinalResult = false;
@@ -197,15 +220,20 @@ class SpeechService {
       listenOptions: SpeechListenOptions(
         cancelOnError: true,
         partialResults: true,
-        onDevice: false, // offline English pack rarely installed; allow online
+        onDevice: _useOnDevice,
       ),
     );
 
-    // Block until the session ends (final result, silence, timeout, or cancel).
     await completer.future;
 
-    // If the session timed out with no speech, emit empty final result so
-    // VoiceNavigationService can handle it gracefully.
+    // On-device pack unavailable — retry transparently with online recognizer.
+    if (_languageUnavailableRetry) {
+      _languageUnavailableRetry = false;
+      debugPrint('AndroidSTT: retrying with onDevice=false');
+      await _startAndroidListening();
+      return;
+    }
+
     if (!gotFinalResult) {
       onResult?.call(_lastRecognizedWords, true);
     }

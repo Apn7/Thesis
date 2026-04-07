@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'groq_service.dart';
+import 'llm_service.dart';
 import 'speech_service.dart';
 import 'tts_service.dart';
 
@@ -18,7 +18,7 @@ enum VoiceAction {
 class VoiceNavigationService extends ChangeNotifier {
   static VoiceNavigationService? _instance;
 
-  final GroqService _groq = GroqService.instance;
+  final LlmService _llm = LlmService.instance;
   final SpeechService _speech = SpeechService.instance;
   final TtsService _tts = TtsService.instance;
 
@@ -121,7 +121,7 @@ class VoiceNavigationService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _groq.processCommand(text);
+      final response = await _llm.processCommand(text);
       _lastResponse = response.spokenResponse;
 
       // Speak the response

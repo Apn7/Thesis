@@ -1,18 +1,8 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
-/// API configuration for Groq (Whisper + LLaMA)
+/// Configuration shared across services.
+///
+/// Groq API constants have been removed — intent recognition now runs
+/// fully on-device via LiteRT-LM (see LlmService + MainActivity.kt).
 class ApiConfig {
-  // Groq API Key — loaded from .env at runtime
-  static String get groqApiKey => dotenv.env['GROQ_API_KEY'] ?? '';
-
-  // Groq API endpoint
-  static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
-
-  // Models
-  static const String whisperModel = 'whisper-large-v3'; // For STT
-  static const String llamaModel =
-      'llama-3.3-70b-versatile'; // For intent understanding
-
   // System prompt for voice navigation
   static const String systemPrompt = '''
 You are a voice assistant for a smart cane navigation app for visually impaired users in Bangladesh.
