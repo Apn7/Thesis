@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
@@ -56,6 +57,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _setup() async {
     try {
+      await _requestPermissions();
       await _copyModels();
       await _initLlm();
       await _initServices();
@@ -66,6 +68,60 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed(AppRoutes.home);
+  }
+
+  /// Request all dangerous permissions at first launch so blind users never
+  /// need to navigate to system Settings manually.
+  Future<void> _requestPermissions() async {
+    _update('অনুমতি নেওয়া হচ্ছে...', 'Requesting permissions...', 0.02);
+
+    final statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.locationWhenInUse,
+      Permission.microphone,
+    ].request();
+
+    for (final entry in statuses.entries) {
+      debugPrint('Permission ${entry.key}: ${entry.value}');
+    }
+
+    // If any critical permission is permanently denied, guide user to settings.
+    final permanentlyDenied = statuses.entries
+        .where((e) => e.value.isPermanentlyDenied)
+        .map((e) => e.key.toString().split('.').last)
+        .toList();
+
+    if (permanentlyDenied.isNotEmpty && mounted) {
+      debugPrint('Permanently denied: $permanentlyDenied — opening app settings');
+      await showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('অনুমতি প্রয়োজন\nPermissions Required'),
+          content: Text(
+            'নিম্নলিখিত অনুমতি দিন: ${permanentlyDenied.join(", ")}\n\n'
+            'Please allow: ${permanentlyDenied.join(", ")}\n\n'
+            'Settings → App → Permissions',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                openAppSettings();
+                Navigator.pop(context);
+              },
+              child: const Text('সেটিংস খুলুন / Open Settings'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('এড়িয়ে যান / Skip'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    _update('অনুমতি সম্পন্ন ✓', 'Permissions done ✓', 0.04);
   }
 
   Future<void> _copyModels() async {

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:vibration/vibration.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
@@ -7,7 +9,6 @@ import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/voice_indicator.dart';
 
-/// Home screen with voice-first navigation
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -15,14 +16,38 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
   final BleService _bleService = BleService.instance;
   bool _isInitialized = false;
+  bool _connectionAnnounced = false;
+
+  // Active alert — cleared automatically when Pi stops sending (object gone)
+  BleAlert? _currentAlert;
+  Timer? _alertClearTimer;
+
+  late final AnimationController _alertAnimController;
+  late final Animation<double> _alertScale;
+  late final Animation<double> _alertOpacity;
 
   @override
   void initState() {
     super.initState();
+
+    _alertAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _alertScale = CurvedAnimation(
+      parent: _alertAnimController,
+      curve: Curves.elasticOut,
+    );
+    _alertOpacity = CurvedAnimation(
+      parent: _alertAnimController,
+      curve: Curves.easeIn,
+    );
+
     _initializeServices();
     _setupNavigationCallback();
     _initializeBle();
@@ -30,25 +55,20 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _alertClearTimer?.cancel();
+    _alertAnimController.dispose();
     _bleService.disconnect();
     super.dispose();
   }
 
-  /// Initialize BLE service and set up alert callback
-  bool _connectionAnnounced = false;
-
   Future<void> _initializeBle() async {
-    // Set up alert callback — when Pi sends an obstacle alert via BLE
     _bleService.onAlertReceived = (message) {
       _handleIncomingMessage(message);
     };
 
-    // Listen for BLE state changes to rebuild UI
     _bleService.addListener(() {
       if (mounted) {
         setState(() {});
-
-        // Announce connection via voice (only once per connection session)
         if (_bleService.state == BleConnectionState.connected &&
             !_connectionAnnounced) {
           _connectionAnnounced = true;
@@ -65,109 +85,51 @@ class _HomeScreenState extends State<HomeScreen> {
     await _bleService.initialize();
   }
 
-  /// Handles incoming messages from the Raspberry Pi (via BLE)
-  /// Format from Pi: "LEVEL:OBJECT_NAME:CONFIDENCE:POSITION"
   void _handleIncomingMessage(String message) {
     if (!mounted) return;
-
     final alert = BleAlert.parse(message);
 
-    // Build human-readable speech string
-    String speechText;
-    if (alert.objectName.isNotEmpty && alert.position.isNotEmpty) {
-      speechText =
-          '${alert.level}: ${alert.objectName} detected at ${alert.position}';
-    } else {
-      speechText = message;
-    }
+    // Update displayed alert and reset the auto-clear timer.
+    // Pi sends every 3 s while the object is in scene; 5 s timeout means
+    // the card disappears ~2 s after the object leaves the frame.
+    _alertClearTimer?.cancel();
+    setState(() => _currentAlert = alert);
+    _alertClearTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _currentAlert = null);
+    });
+
+    // Trigger bounce animation
+    _alertAnimController.forward(from: 0);
+
+    // Vibrate based on severity
+    _vibrateForAlert(alert);
 
     // Speak the alert
+    final speechText = alert.objectName.isNotEmpty && alert.position.isNotEmpty
+        ? '${alert.level}: ${alert.objectName} detected at ${alert.position}'
+        : message;
     _voiceService.speak(speechText);
-
-    // Show critical alert dialog for immediate-danger obstacles
-    if (alert.isCritical) {
-      _showCriticalAlertDialog(alert.displayMessage);
-    }
   }
 
-  /// Shows a critical alert dialog for emergency warnings
-  void _showCriticalAlertDialog(String message) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          backgroundColor: AppColors.error,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppConstants.radiusL),
-          ),
-          title: Row(
-            children: [
-              const Icon(
-                Icons.warning_amber_rounded,
-                color: Colors.white,
-                size: 32,
-              ),
-              SizedBox(width: AppConstants.spacingM),
-              const Expanded(
-                child: Text(
-                  '⚠️ CRITICAL ALERT',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: Container(
-            padding: EdgeInsets.all(AppConstants.spacingM),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(AppConstants.radiusM),
-            ),
-            child: Text(
-              message,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w500,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          actions: [
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () => Navigator.of(context).pop(),
-                style: FilledButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: AppColors.error,
-                  padding: EdgeInsets.symmetric(
-                    vertical: AppConstants.spacingM,
-                  ),
-                ),
-                child: const Text(
-                  'DISMISS',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+  Future<void> _vibrateForAlert(BleAlert alert) async {
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator != true) return;
+
+    if (alert.isCritical) {
+      // Three strong pulses — pattern: [delay, on, off, on, off, on]
+      Vibration.vibrate(pattern: [0, 400, 150, 400, 150, 400]);
+    } else if (alert.isWarning) {
+      // Two medium pulses
+      Vibration.vibrate(pattern: [0, 250, 120, 250]);
+    } else {
+      // Single short pulse for caution
+      Vibration.vibrate(duration: 150);
+    }
   }
 
   Future<void> _initializeServices() async {
     await _voiceService.initialize();
-    setState(() {
-      _isInitialized = true;
-    });
-
-    // Welcome message
+    if (mounted) setState(() => _isInitialized = true);
     await Future.delayed(const Duration(milliseconds: 500));
     await _voiceService.speak(
       'স্মার্ট ক্যান অ্যাপে স্বাগতম। বলুন কোথায় যেতে চান। Welcome to Smart Cane. Say where you want to go.',
@@ -178,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _voiceService.onNavigationAction = (action) {
       switch (action) {
         case VoiceAction.navigateHome:
-          // Already on home
           break;
         case VoiceAction.navigateLocation:
           Navigator.pushNamed(context, AppRoutes.location);
@@ -213,6 +174,282 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
+  // ── Alert banner colours / icons ──────────────────────────────────────────
+
+  Color _alertColor(BleAlert? alert) {
+    if (alert == null) return AppColors.info;
+    if (alert.isCritical) return AppColors.error;
+    if (alert.isWarning) return AppColors.warning;
+    return AppColors.info;
+  }
+
+  IconData _alertIcon(BleAlert? alert) {
+    if (alert == null) return Icons.notifications_active;
+    if (alert.isCritical) return Icons.warning_rounded;
+    if (alert.isWarning) return Icons.error_outline_rounded;
+    return Icons.info_outline_rounded;
+  }
+
+  // ── Widgets ───────────────────────────────────────────────────────────────
+
+  Widget _buildAlertCard() {
+    final alert = _currentAlert;
+    final color = _alertColor(alert);
+
+    return ScaleTransition(
+      scale: _alertScale,
+      child: FadeTransition(
+        opacity: _alertOpacity,
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(AppConstants.radiusM),
+            border: Border.all(color: color, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Level header strip
+              Container(
+                padding: EdgeInsets.symmetric(
+                  horizontal: AppConstants.spacingM,
+                  vertical: AppConstants.spacingS,
+                ),
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(AppConstants.radiusM - 2),
+                    topRight: Radius.circular(AppConstants.radiusM - 2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(_alertIcon(alert), color: Colors.white, size: 20),
+                    SizedBox(width: AppConstants.spacingS),
+                    Text(
+                      alert?.level ?? 'ALERT',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (alert?.confidence.isNotEmpty ?? false)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          alert!.confidence,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Object name + position
+              Padding(
+                padding: EdgeInsets.all(AppConstants.spacingM),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            alert?.objectName ?? '',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              color: color,
+                            ),
+                          ),
+                          if (alert?.position.isNotEmpty ?? false) ...[
+                            SizedBox(height: AppConstants.spacingXs),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.navigation_rounded,
+                                  size: 14,
+                                  color: AppColors.textSecondary,
+                                ),
+                                SizedBox(width: 4),
+                                Text(
+                                  alert!.position.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.textSecondary,
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    // Big level icon
+                    Icon(_alertIcon(alert), color: color, size: 48),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBleCard() {
+    return Card(
+      elevation: 4,
+      color: _bleService.isConnected
+          ? AppColors.success.withValues(alpha: 0.08)
+          : Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.radiusM),
+        side: BorderSide(
+          color: _bleService.isConnected
+              ? AppColors.success
+              : _bleService.state == BleConnectionState.bluetoothOff
+                  ? AppColors.error.withValues(alpha: 0.5)
+                  : AppColors.primary.withValues(alpha: 0.3),
+          width: 2,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(AppConstants.spacingL),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Connection header
+            Row(
+              children: [
+                Icon(
+                  _bleService.isConnected
+                      ? Icons.bluetooth_connected
+                      : _bleService.state == BleConnectionState.bluetoothOff
+                          ? Icons.bluetooth_disabled
+                          : _bleService.isScanning
+                              ? Icons.bluetooth_searching
+                              : Icons.bluetooth,
+                  color: _bleService.isConnected
+                      ? AppColors.success
+                      : _bleService.state == BleConnectionState.bluetoothOff
+                          ? AppColors.error
+                          : _bleService.isScanning
+                              ? AppColors.info
+                              : AppColors.warning,
+                  size: 28,
+                ),
+                SizedBox(width: AppConstants.spacingM),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ব্লুটুথ কানেকশন / BLE',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: AppConstants.spacingXs),
+                      Text(
+                        _bleService.statusMessage,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: _bleService.isConnected
+                                  ? AppColors.success
+                                  : AppColors.textSecondary,
+                              fontWeight: FontWeight.w500,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Status dot
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _bleService.isConnected
+                        ? AppColors.success
+                        : _bleService.state == BleConnectionState.bluetoothOff
+                            ? AppColors.error
+                            : AppColors.warning,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (_bleService.isConnected
+                                ? AppColors.success
+                                : AppColors.warning)
+                            .withValues(alpha: 0.5),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            if (!_bleService.isConnected &&
+                _bleService.state != BleConnectionState.scanning) ...[
+              SizedBox(height: AppConstants.spacingM),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _bleService.startScanning(),
+                  icon: const Icon(Icons.bluetooth_searching),
+                  label: const Text('Scan for Smart Cane / স্ক্যান করুন'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: BorderSide(color: AppColors.primary),
+                    padding:
+                        EdgeInsets.symmetric(vertical: AppConstants.spacingM),
+                  ),
+                ),
+              ),
+            ],
+
+            if (_bleService.isScanning) ...[
+              SizedBox(height: AppConstants.spacingM),
+              const LinearProgressIndicator(),
+            ],
+
+            // Alert card — shown while an object is in scene, cleared after 5 s
+            if (_currentAlert != null) ...[
+              SizedBox(height: AppConstants.spacingM),
+              Divider(color: AppColors.primary.withValues(alpha: 0.2)),
+              SizedBox(height: AppConstants.spacingS),
+              Text(
+                'সর্বশেষ সতর্কতা / Latest Alert',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+              ),
+              SizedBox(height: AppConstants.spacingS),
+              _buildAlertCard(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -227,8 +464,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(
                 AppConstants.appNameEn,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withOpacity(0.9),
-                ),
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
               ),
             ],
           ),
@@ -245,7 +482,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Voice Indicator Header
+                  // ── Voice indicator card ──────────────────────────────────
                   Card(
                     elevation: 4,
                     color: Theme.of(context).colorScheme.surface,
@@ -258,22 +495,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             size: 120,
                           ),
                           SizedBox(height: AppConstants.spacingL),
-
-                          // Status text
                           Text(
                             _voiceService.isProcessing
                                 ? 'চিন্তা করছি...'
                                 : _voiceService.isListening
-                                ? 'শুনছি...'
-                                : 'ভয়েস কমান্ড',
-                            style: Theme.of(context).textTheme.headlineSmall
+                                    ? 'শুনছি...'
+                                    : 'ভয়েস কমান্ড',
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
                                 ?.copyWith(
                                   fontWeight: FontWeight.bold,
                                   color: _voiceService.isListening
                                       ? AppColors.accent
                                       : _voiceService.isProcessing
-                                      ? AppColors.info
-                                      : AppColors.primary,
+                                          ? AppColors.info
+                                          : AppColors.primary,
                                 ),
                           ),
                           SizedBox(height: AppConstants.spacingXs),
@@ -281,33 +518,33 @@ class _HomeScreenState extends State<HomeScreen> {
                             _voiceService.isProcessing
                                 ? 'Processing...'
                                 : _voiceService.isListening
-                                ? 'Listening...'
-                                : 'Voice Command',
-                            style: Theme.of(context).textTheme.bodyMedium
+                                    ? 'Listening...'
+                                    : 'Voice Command',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
                                 ?.copyWith(color: AppColors.textSecondary),
                           ),
-
-                          // Transcript display
                           if (_voiceService.currentTranscript.isNotEmpty) ...[
                             SizedBox(height: AppConstants.spacingM),
                             Container(
                               padding: EdgeInsets.all(AppConstants.spacingM),
                               decoration: BoxDecoration(
-                                color: AppColors.primaryLight.withOpacity(0.2),
+                                color: AppColors.primaryLight
+                                    .withValues(alpha: 0.2),
                                 borderRadius: BorderRadius.circular(
-                                  AppConstants.radiusM,
-                                ),
+                                    AppConstants.radiusM),
                               ),
                               child: Text(
                                 '"${_voiceService.currentTranscript}"',
-                                style: Theme.of(context).textTheme.bodyLarge
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyLarge
                                     ?.copyWith(fontStyle: FontStyle.italic),
                                 textAlign: TextAlign.center,
                               ),
                             ),
                           ],
-
-                          // Last response
                           if (_voiceService.lastResponse.isNotEmpty &&
                               !_voiceService.isListening &&
                               !_voiceService.isProcessing) ...[
@@ -315,46 +552,38 @@ class _HomeScreenState extends State<HomeScreen> {
                             Container(
                               padding: EdgeInsets.all(AppConstants.spacingM),
                               decoration: BoxDecoration(
-                                color: AppColors.success.withOpacity(0.1),
+                                color: AppColors.success.withValues(alpha: 0.1),
                                 borderRadius: BorderRadius.circular(
-                                  AppConstants.radiusM,
-                                ),
+                                    AppConstants.radiusM),
                                 border: Border.all(
-                                  color: AppColors.success.withOpacity(0.3),
+                                  color:
+                                      AppColors.success.withValues(alpha: 0.3),
                                 ),
                               ),
                               child: Row(
                                 children: [
-                                  Icon(
-                                    Icons.check_circle,
-                                    color: AppColors.success,
-                                  ),
+                                  Icon(Icons.check_circle,
+                                      color: AppColors.success),
                                   SizedBox(width: AppConstants.spacingS),
                                   Expanded(
                                     child: Text(
                                       _voiceService.lastResponse,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodyMedium,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ],
-
                           SizedBox(height: AppConstants.spacingL),
-
-                          // Listen button
                           FilledButton.icon(
-                            onPressed: _isInitialized
-                                ? _toggleVoiceListening
-                                : null,
-                            icon: Icon(
-                              _voiceService.isListening
-                                  ? Icons.mic_off
-                                  : Icons.mic,
-                            ),
+                            onPressed:
+                                _isInitialized ? _toggleVoiceListening : null,
+                            icon: Icon(_voiceService.isListening
+                                ? Icons.mic_off
+                                : Icons.mic),
                             label: Text(
                               _voiceService.isListening
                                   ? 'থামান (Stop)'
@@ -370,8 +599,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                           ),
-
-                          // Error display
                           if (_voiceService.error.isNotEmpty) ...[
                             SizedBox(height: AppConstants.spacingM),
                             Text(
@@ -387,257 +614,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   SizedBox(height: AppConstants.spacingL),
 
-                  // BLE Connection Status Card
-                  Card(
-                    elevation: 4,
-                    color: _bleService.isConnected
-                        ? AppColors.success.withOpacity(0.1)
-                        : Theme.of(context).colorScheme.surface,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppConstants.radiusM),
-                      side: BorderSide(
-                        color: _bleService.isConnected
-                            ? AppColors.success
-                            : _bleService.state ==
-                                  BleConnectionState.bluetoothOff
-                            ? AppColors.error.withOpacity(0.5)
-                            : AppColors.primary.withOpacity(0.3),
-                        width: 2,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: EdgeInsets.all(AppConstants.spacingL),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Header
-                          Row(
-                            children: [
-                              Icon(
-                                _bleService.isConnected
-                                    ? Icons.bluetooth_connected
-                                    : _bleService.state ==
-                                          BleConnectionState.bluetoothOff
-                                    ? Icons.bluetooth_disabled
-                                    : _bleService.isScanning
-                                    ? Icons.bluetooth_searching
-                                    : Icons.bluetooth,
-                                color: _bleService.isConnected
-                                    ? AppColors.success
-                                    : _bleService.state ==
-                                          BleConnectionState.bluetoothOff
-                                    ? AppColors.error
-                                    : _bleService.isScanning
-                                    ? AppColors.info
-                                    : AppColors.warning,
-                                size: 28,
-                              ),
-                              SizedBox(width: AppConstants.spacingM),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'ব্লুটুথ কানেকশন / BLE Connection',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                    ),
-                                    SizedBox(height: AppConstants.spacingXs),
-                                    Text(
-                                      _bleService.statusMessage,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: _bleService.isConnected
-                                                ? AppColors.success
-                                                : AppColors.textSecondary,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // Connection indicator dot
-                              Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: _bleService.isConnected
-                                      ? AppColors.success
-                                      : _bleService.state ==
-                                            BleConnectionState.bluetoothOff
-                                      ? AppColors.error
-                                      : AppColors.warning,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color:
-                                          (_bleService.isConnected
-                                                  ? AppColors.success
-                                                  : AppColors.warning)
-                                              .withOpacity(0.5),
-                                      blurRadius: 8,
-                                      spreadRadius: 2,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          // Scan/Reconnect Button
-                          if (!_bleService.isConnected &&
-                              _bleService.state !=
-                                  BleConnectionState.scanning) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            SizedBox(
-                              width: double.infinity,
-                              child: OutlinedButton.icon(
-                                onPressed: () => _bleService.startScanning(),
-                                icon: const Icon(Icons.bluetooth_searching),
-                                label: const Text(
-                                  'Scan for Smart Cane / স্ক্যান করুন',
-                                ),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: AppColors.primary,
-                                  side: BorderSide(color: AppColors.primary),
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: AppConstants.spacingM,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-
-                          // Scanning progress indicator
-                          if (_bleService.isScanning) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            const LinearProgressIndicator(),
-                          ],
-
-                          // Latest Alert Display
-                          if (_bleService.latestAlert.isNotEmpty) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            Divider(color: AppColors.primary.withOpacity(0.2)),
-                            SizedBox(height: AppConstants.spacingM),
-                            Builder(
-                              builder: (context) {
-                                final alert = _bleService.latestParsedAlert;
-                                final isCritical = alert?.isCritical ?? false;
-                                final isWarning = alert?.isWarning ?? false;
-
-                                // Pick color based on danger level
-                                final alertColor = isCritical
-                                    ? AppColors.error
-                                    : isWarning
-                                    ? AppColors.warning
-                                    : AppColors.info;
-
-                                return Container(
-                                  width: double.infinity,
-                                  padding: EdgeInsets.all(
-                                    AppConstants.spacingM,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: alertColor.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(
-                                      AppConstants.radiusS,
-                                    ),
-                                    border: Border.all(
-                                      color: alertColor.withOpacity(0.5),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            isCritical
-                                                ? Icons.warning_amber_rounded
-                                                : isWarning
-                                                ? Icons.error_outline
-                                                : Icons.notifications_active,
-                                            color: alertColor,
-                                            size: 20,
-                                          ),
-                                          SizedBox(
-                                            width: AppConstants.spacingS,
-                                          ),
-                                          Expanded(
-                                            child: Text(
-                                              alert != null
-                                                  ? '${alert.level} — ${alert.position}'
-                                                  : 'সর্বশেষ সতর্কতা / Latest Alert',
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelMedium
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.bold,
-                                                    color: alertColor,
-                                                  ),
-                                            ),
-                                          ),
-                                          if (alert?.confidence.isNotEmpty ??
-                                              false)
-                                            Container(
-                                              padding: EdgeInsets.symmetric(
-                                                horizontal:
-                                                    AppConstants.spacingS,
-                                                vertical: 2,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: alertColor.withOpacity(
-                                                  0.2,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                alert!.confidence,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: alertColor,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      SizedBox(height: AppConstants.spacingS),
-                                      Text(
-                                        alert?.displayMessage ??
-                                            _bleService.latestAlert,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyLarge
-                                            ?.copyWith(
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
+                  // ── BLE + alert card ──────────────────────────────────────
+                  _buildBleCard(),
 
                   SizedBox(height: AppConstants.spacingXl),
 
-                  // Text input for testing (helpful for demo)
+                  // ── Test command ──────────────────────────────────────────
                   Card(
                     child: Padding(
                       padding: EdgeInsets.all(AppConstants.spacingM),
@@ -654,9 +636,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               hintText: 'Type a command...',
                               suffixIcon: IconButton(
                                 icon: const Icon(Icons.send),
-                                onPressed: () {
-                                  // Get text from controller and send
-                                },
+                                onPressed: () {},
                               ),
                             ),
                             onSubmitted: (text) {
@@ -672,22 +652,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   SizedBox(height: AppConstants.spacingXl),
 
-                  // Navigation Header
+                  // ── Navigation grid ───────────────────────────────────────
                   Semantics(
                     header: true,
                     label: 'নেভিগেশন অপশন। Navigation options.',
                     child: Text(
                       'কোথায় যেতে চান? / Where to go?',
-                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold),
                       textAlign: TextAlign.center,
                     ),
                   ),
 
                   SizedBox(height: AppConstants.spacingL),
 
-                  // Main Navigation Grid
                   GridView.count(
                     crossAxisCount: 2,
                     shrinkWrap: true,

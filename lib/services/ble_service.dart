@@ -188,8 +188,30 @@ class BleService extends ChangeNotifier {
 
     _updateState(BleConnectionState.scanning, 'Scanning for Smart Cane...');
     debugPrint('>> BLE: ===== STARTING SCAN =====');
+
+    // Check bonded devices first — Android does not return already-paired
+    // devices in active scan results, so if the user paired via system
+    // Bluetooth settings we must connect directly from the bonded list.
+    try {
+      final bonded = await FlutterBluePlus.bondedDevices;
+      debugPrint('>> BLE: ${bonded.length} bonded device(s)');
+      for (final device in bonded) {
+        final name = device.platformName;
+        debugPrint('>> BLE: Bonded: "$name" (${device.remoteId})');
+        if (name.toLowerCase().contains(
+          AppConstants.bleDeviceName.toLowerCase(),
+        )) {
+          debugPrint('>> BLE: ★ SmartCane found in bonded list — connecting directly');
+          _connectToDevice(device);
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('>> BLE: Could not read bonded devices: $e');
+    }
+
     debugPrint(
-      '>> BLE: Looking for device name containing: "${AppConstants.bleDeviceName}"',
+      '>> BLE: Not in bonded list — starting active scan for "${AppConstants.bleDeviceName}"',
     );
 
     try {
@@ -322,7 +344,13 @@ class BleService extends ChangeNotifier {
     _updateState(BleConnectionState.connecting, 'Discovering services...');
 
     try {
-      // Step 1: Discover all services
+      // Step 1: Clear Android GATT cache to force fresh service discovery.
+      // Stale cache (e.g. after reinstall) can return wrong/missing services.
+      try {
+        await device.clearGattCache();
+        debugPrint('>> BLE: GATT cache cleared');
+      } catch (_) {}
+
       List<BluetoothService> services = await device.discoverServices();
       debugPrint('>> BLE: Found ${services.length} services:');
 
