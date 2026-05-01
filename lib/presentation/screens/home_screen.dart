@@ -5,6 +5,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
 import '../../services/ble_service.dart';
+import '../../services/esp_ble_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/voice_indicator.dart';
@@ -20,8 +21,10 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
   final BleService _bleService = BleService.instance;
+  final EspBleService _espBleService = EspBleService.instance;
   bool _isInitialized = false;
   bool _connectionAnnounced = false;
+  bool _espConnectionAnnounced = false;
 
   // Active alert — cleared automatically when Pi stops sending (object gone)
   BleAlert? _currentAlert;
@@ -50,14 +53,24 @@ class _HomeScreenState extends State<HomeScreen>
 
     _initializeServices();
     _setupNavigationCallback();
-    _initializeBle();
+    if (AppConstants.enablePiBle) {
+      _initializeBle();
+    }
+    if (AppConstants.enableEspBle) {
+      _initializeEspBle();
+    }
   }
 
   @override
   void dispose() {
     _alertClearTimer?.cancel();
     _alertAnimController.dispose();
-    _bleService.disconnect();
+    if (AppConstants.enablePiBle) {
+      _bleService.disconnect();
+    }
+    if (AppConstants.enableEspBle) {
+      _espBleService.disconnect();
+    }
     super.dispose();
   }
 
@@ -83,6 +96,31 @@ class _HomeScreenState extends State<HomeScreen>
     });
 
     await _bleService.initialize();
+  }
+
+  Future<void> _initializeEspBle() async {
+    _espBleService.onVerdictChanged = (verdict) {
+      if (!mounted) return;
+      // Speak only on transitions to a higher-severity state.
+      if (verdict == EspVerdict.critical || verdict == EspVerdict.warning) {
+        _voiceService.speak(verdict.speechText);
+      }
+    };
+
+    _espBleService.addListener(() {
+      if (!mounted) return;
+      setState(() {});
+      if (_espBleService.state == EspBleState.connected &&
+          !_espConnectionAnnounced) {
+        _espConnectionAnnounced = true;
+        _voiceService.speak('ESP32 sensor connected.');
+      } else if (_espBleService.state == EspBleState.disconnected &&
+          _espConnectionAnnounced) {
+        _espConnectionAnnounced = false;
+      }
+    });
+
+    await _espBleService.initialize();
   }
 
   void _handleIncomingMessage(String message) {
@@ -310,6 +348,188 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // ── ESP32 distance card ────────────────────────────────────────────────
+
+  Color _verdictColor(EspVerdict v) {
+    switch (v) {
+      case EspVerdict.critical:
+        return AppColors.error;
+      case EspVerdict.warning:
+        return AppColors.warning;
+      case EspVerdict.caution:
+        return AppColors.accent;
+      case EspVerdict.safe:
+        return AppColors.success;
+      case EspVerdict.noData:
+        return AppColors.textSecondary;
+    }
+  }
+
+  Widget _buildEspCard() {
+    final connected = _espBleService.isConnected;
+    final scanning = _espBleService.isScanning;
+    final btOff = _espBleService.state == EspBleState.bluetoothOff;
+    final v = _espBleService.verdict;
+    final d = _espBleService.latestDistance;
+    final color = connected ? _verdictColor(v) : AppColors.primary;
+
+    return Card(
+      elevation: 4,
+      color: connected
+          ? color.withValues(alpha: 0.08)
+          : Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppConstants.radiusM),
+        side: BorderSide(
+          color: connected
+              ? color
+              : btOff
+                  ? AppColors.error.withValues(alpha: 0.5)
+                  : AppColors.primary.withValues(alpha: 0.3),
+          width: 2,
+        ),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(AppConstants.spacingL),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Icon(
+                  connected
+                      ? Icons.sensors
+                      : btOff
+                          ? Icons.bluetooth_disabled
+                          : scanning
+                              ? Icons.bluetooth_searching
+                              : Icons.sensors_off,
+                  color: connected
+                      ? color
+                      : btOff
+                          ? AppColors.error
+                          : scanning
+                              ? AppColors.info
+                              : AppColors.warning,
+                  size: 28,
+                ),
+                SizedBox(width: AppConstants.spacingM),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ESP32 দূরত্ব / Distance',
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      SizedBox(height: AppConstants.spacingXs),
+                      Text(
+                        _espBleService.statusMessage,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: connected
+                                  ? color
+                                  : AppColors.textSecondary,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: connected ? color : AppColors.warning,
+                    boxShadow: [
+                      BoxShadow(
+                        color: (connected ? color : AppColors.warning)
+                            .withValues(alpha: 0.5),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            if (connected) ...[
+              SizedBox(height: AppConstants.spacingL),
+              // Big distance number + verdict pill
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          d == null ? '— cm' : '${d.toStringAsFixed(1)} cm',
+                          style: Theme.of(context)
+                              .textTheme
+                              .displaySmall
+                              ?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: color,
+                              ),
+                        ),
+                        SizedBox(height: AppConstants.spacingS),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            v.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+
+            if (!connected && !scanning) ...[
+              SizedBox(height: AppConstants.spacingM),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _espBleService.startScanning(),
+                  icon: const Icon(Icons.bluetooth_searching),
+                  label: const Text('Scan for ESP32 / স্ক্যান করুন'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: BorderSide(color: AppColors.primary),
+                    padding:
+                        EdgeInsets.symmetric(vertical: AppConstants.spacingM),
+                  ),
+                ),
+              ),
+            ],
+
+            if (scanning) ...[
+              SizedBox(height: AppConstants.spacingM),
+              const LinearProgressIndicator(),
+            ],
+          ],
         ),
       ),
     );
@@ -614,8 +834,14 @@ class _HomeScreenState extends State<HomeScreen>
 
                   SizedBox(height: AppConstants.spacingL),
 
-                  // ── BLE + alert card ──────────────────────────────────────
-                  _buildBleCard(),
+                  // ── ESP32 distance card ───────────────────────────────────
+                  if (AppConstants.enableEspBle) ...[
+                    _buildEspCard(),
+                    SizedBox(height: AppConstants.spacingL),
+                  ],
+
+                  // ── BLE + alert card (Pi) ─────────────────────────────────
+                  if (AppConstants.enablePiBle) _buildBleCard(),
 
                   SizedBox(height: AppConstants.spacingXl),
 

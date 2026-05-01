@@ -47,4 +47,21 @@ class AppConstants {
   static const String bleDeviceName = 'SmartCane';
   static const Duration bleScanTimeout = Duration(seconds: 10);
   static const Duration bleReconnectDelay = Duration(seconds: 3);
+
+  // ESP32 BLE — must match smart_cane_ble.ino
+  static const String espBleServiceUuid =
+      'a1b2c3d4-0001-1000-8000-00805f9b34fb';
+  static const String espBleDistanceCharUuid =
+      'a1b2c3d4-0002-1000-8000-00805f9b34fb';
+  static const String espBleDeviceName = 'SmartCane_ESP';
+
+  // Verdict thresholds (cm) — distance < threshold triggers that level
+  static const double espCriticalCm = 50.0;
+  static const double espWarningCm = 100.0;
+  static const double espCautionCm = 200.0;
+
+  // Feature flags — flip to detach/reattach without removing code
+  static const bool enablePiBle = false;
+  static const bool enableEspBle = true;
+  static const bool enableLlm = false;  // set true when Gemma model is downloaded
 }

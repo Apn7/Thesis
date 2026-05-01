@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/utils/constants.dart';
 import 'llm_service.dart';
 import 'speech_service.dart';
 import 'tts_service.dart';
@@ -112,7 +113,9 @@ class VoiceNavigationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Process the voice command through Groq LLaMA
+  /// Process the voice command through the on-device LLM.
+  /// When [AppConstants.enableLlm] is false the LLM is skipped and a stub
+  /// response is returned so the rest of the app keeps working.
   Future<void> _processCommand(String text) async {
     if (text.isEmpty) return;
 
@@ -121,13 +124,19 @@ class VoiceNavigationService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final response = await _llm.processCommand(text);
-      _lastResponse = response.spokenResponse;
+      final VoiceCommandResponse response;
+      if (AppConstants.enableLlm) {
+        response = await _llm.processCommand(text);
+      } else {
+        response = VoiceCommandResponse(
+          action: 'none',
+          spokenResponse: 'Voice AI is currently disabled.',
+        );
+      }
 
-      // Speak the response
+      _lastResponse = response.spokenResponse;
       await _tts.speak(response.spokenResponse);
 
-      // Trigger navigation action
       final action = _parseAction(response.action);
       if (action != VoiceAction.none) {
         onNavigationAction?.call(action);
