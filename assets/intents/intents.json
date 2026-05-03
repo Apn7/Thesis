@@ -1,0 +1,185 @@
+{
+  "_comment": "Local intent definitions for the smart-cane voice assistant. Each intent lists phrase variants in Bangla, English, and Banglish (Bengali in Latin script). The IntentMatcher scores user input against every phrase and picks the highest-scoring intent above the confidence threshold; below the threshold the request falls through to the Groq cloud LLM.",
+  "intents": [
+    {
+      "action": "navigate_home",
+      "phrases": [
+        "হোম",
+        "হোমে যাও",
+        "হোম স্ক্রিন",
+        "মূল পাতা",
+        "মূল পেইজ",
+        "শুরুতে যাও",
+        "প্রথম পেইজ",
+        "home",
+        "go home",
+        "go to home",
+        "home screen",
+        "main screen",
+        "main page",
+        "home page",
+        "home jao",
+        "home khulo",
+        "home e jao",
+        "home screen e jao",
+        "main screen e jao"
+      ],
+      "responses": {
+        "bn": "হোম স্ক্রিনে যাচ্ছি",
+        "en": "Going to home screen"
+      }
+    },
+    {
+      "action": "navigate_location",
+      "phrases": [
+        "আমি কোথায়",
+        "আমি কোথায় আছি",
+        "আমার অবস্থান",
+        "অবস্থান দেখাও",
+        "অবস্থান বলো",
+        "জিপিএস",
+        "লোকেশন",
+        "লোকেশন দেখাও",
+        "where am i",
+        "my location",
+        "show location",
+        "show my location",
+        "current location",
+        "gps",
+        "where i am",
+        "tell me my location",
+        "ami kothay",
+        "ami kothay achi",
+        "amar location",
+        "amar obosthan",
+        "location dekhao",
+        "location bolo",
+        "obosthan dekhao"
+      ],
+      "responses": {
+        "bn": "আপনার অবস্থান দেখাচ্ছি",
+        "en": "Showing your location"
+      }
+    },
+    {
+      "action": "navigate_settings",
+      "phrases": [
+        "সেটিংস",
+        "সেটিংস খোলো",
+        "সেটিংস খুলো",
+        "সেটিংস এ যাও",
+        "অপশন",
+        "অপশন খোলো",
+        "প্রেফারেন্স",
+        "settings",
+        "open settings",
+        "go to settings",
+        "show settings",
+        "preferences",
+        "options",
+        "open options",
+        "settings khulo",
+        "settings khoro",
+        "settings e jao",
+        "settings dekhao",
+        "options khulo",
+        "preference khulo"
+      ],
+      "responses": {
+        "bn": "সেটিংস খুলছি",
+        "en": "Opening settings"
+      }
+    },
+    {
+      "action": "navigate_help",
+      "phrases": [
+        "সাহায্য",
+        "সাহায্য চাই",
+        "হেল্প",
+        "হেল্প দাও",
+        "টিউটোরিয়াল",
+        "কীভাবে ব্যবহার করবো",
+        "কীভাবে ব্যবহার",
+        "সহায়িকা",
+        "নির্দেশিকা",
+        "help",
+        "help me",
+        "tutorial",
+        "show tutorial",
+        "how to use",
+        "how do i use this",
+        "guide",
+        "instructions",
+        "show instructions",
+        "help dao",
+        "help khulo",
+        "tutorial dekhao",
+        "kivabe babohar korbo",
+        "shahajjo dao"
+      ],
+      "responses": {
+        "bn": "সাহায্য পেইজ খুলছি",
+        "en": "Opening help"
+      }
+    },
+    {
+      "action": "speak_battery",
+      "phrases": [
+        "ব্যাটারি",
+        "ব্যাটারি কতটুকু",
+        "ব্যাটারি কত",
+        "ব্যাটারি স্ট্যাটাস",
+        "চার্জ কত",
+        "চার্জ কতটুকু",
+        "চার্জ আছে কত",
+        "ব্যাটারির অবস্থা",
+        "battery",
+        "battery status",
+        "battery level",
+        "how much battery",
+        "how much battery left",
+        "charge level",
+        "how much charge",
+        "tell me battery",
+        "battery koto",
+        "battery status",
+        "battery koto ache",
+        "charge koto",
+        "charge koto ache"
+      ],
+      "responses": {
+        "bn": "ব্যাটারি স্ট্যাটাস বলছি",
+        "en": "Telling battery status"
+      }
+    },
+    {
+      "action": "speak_time",
+      "phrases": [
+        "সময়",
+        "সময় কত",
+        "এখন কয়টা",
+        "এখন কয়টা বাজে",
+        "ক'টা বাজে",
+        "কত সময়",
+        "এখন সময় কত",
+        "time",
+        "what time",
+        "what time is it",
+        "current time",
+        "tell me the time",
+        "what's the time",
+        "tell time",
+        "time koto",
+        "ekhon koyta baje",
+        "ekhon koyta",
+        "time bolo",
+        "shomoy koto",
+        "shomoy bolo"
+      ],
+      "responses": {
+        "bn": "এখন সময় বলছি",
+        "en": "Telling current time"
+      }
+    }
+  ]
+}

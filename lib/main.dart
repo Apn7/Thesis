@@ -9,6 +9,8 @@ import 'presentation/screens/location_screen.dart';
 import 'presentation/screens/settings_screen.dart';
 import 'presentation/screens/help_screen.dart';
 import 'presentation/screens/splash_screen.dart';
+import 'services/hardware_key_service.dart';
+import 'services/voice_navigation_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,6 +32,21 @@ void main() async {
       statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.light,
     ),
+  );
+
+  // Volume keys (up or down) act as the global push-to-talk button while the
+  // app is in the foreground: hold to listen, release to submit.
+  HardwareKeyService.instance.setVolumeKeyHandlers(
+    onDown: () {
+      final voice = VoiceNavigationService.instance;
+      if (!voice.isListening && !voice.isProcessing) {
+        voice.startListening();
+      }
+    },
+    onUp: () {
+      final voice = VoiceNavigationService.instance;
+      if (voice.isListening) voice.stopListening();
+    },
   );
 
   runApp(const SmartCaneApp());

@@ -95,6 +95,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - .env
+    - assets/intents/intents.json
     # Removed to reduce APK size — re-add when Bengali STT is needed:
     # - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
     # Removed to reduce APK size — re-add when on-device LLM is needed:
