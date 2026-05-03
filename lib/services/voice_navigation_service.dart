@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/utils/constants.dart';
-import 'llm_service.dart';
+import 'groq_service.dart';
+// import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
 import 'speech_service.dart';
 import 'tts_service.dart';
 
@@ -19,7 +20,7 @@ enum VoiceAction {
 class VoiceNavigationService extends ChangeNotifier {
   static VoiceNavigationService? _instance;
 
-  final LlmService _llm = LlmService.instance;
+  final GroqService _groq = GroqService.instance;
   final SpeechService _speech = SpeechService.instance;
   final TtsService _tts = TtsService.instance;
 
@@ -113,8 +114,8 @@ class VoiceNavigationService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Process the voice command through the on-device LLM.
-  /// When [AppConstants.enableLlm] is false the LLM is skipped and a stub
+  /// Process the voice command through the Groq cloud LLM.
+  /// When [AppConstants.enableLlm] is false the call is skipped and a stub
   /// response is returned so the rest of the app keeps working.
   Future<void> _processCommand(String text) async {
     if (text.isEmpty) return;
@@ -126,7 +127,7 @@ class VoiceNavigationService extends ChangeNotifier {
     try {
       final VoiceCommandResponse response;
       if (AppConstants.enableLlm) {
-        response = await _llm.processCommand(text);
+        response = await _groq.processCommand(text);
       } else {
         response = VoiceCommandResponse(
           action: 'none',

@@ -6,9 +6,9 @@ import '../../core/theme/app_colors.dart';
 // import '../../core/utils/constants.dart'; // only needed for enableLlm flag — disabled
 // import '../../services/llm_service.dart'; // on-device LLM — disabled to reduce APK size
 import '../../services/settings_service.dart';
-// import '../../services/speech_service.dart'; // Bengali STT — disabled to reduce APK size
-// import '../../services/stt/model_asset_manager.dart'; // Bengali STT — disabled
-// import '../../services/stt/sherpa_model_config.dart'; // Bengali STT — disabled
+import '../../services/speech_service.dart';
+// import '../../services/stt/model_asset_manager.dart'; // Sherpa offline Bengali STT — disabled
+// import '../../services/stt/sherpa_model_config.dart'; // Sherpa offline Bengali STT — disabled
 
 /// First-launch setup screen: copies bundled model assets to local storage,
 /// then navigates to the home screen automatically.
@@ -142,9 +142,9 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _initServices() async {
     _update('সার্ভিস চালু হচ্ছে...', 'Starting services...', 0.94);
     await SettingsService.instance.load();
-    // await SpeechService.instance.setLocale(  // Bengali STT — disabled
-    //   SettingsService.instance.languageMode,
-    // );
+    await SpeechService.instance.setLocale(
+      SettingsService.instance.languageMode,
+    );
     _update('প্রস্তুত!', 'Ready!', 1.0);
     await Future.delayed(const Duration(milliseconds: 400));
   }

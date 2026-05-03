@@ -5,23 +5,23 @@ import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
-import 'stt/audio_pipeline.dart';
-import 'stt/stt_engine_factory.dart';
+// Sherpa-onnx offline Bengali STT — currently disabled.  The pipeline files
+// remain in lib/services/stt/ so this can be re-enabled later without
+// rewriting anything.  See the commented blocks below for the original
+// dual-engine implementation.
+// import 'stt/audio_pipeline.dart';
+// import 'stt/stt_engine_factory.dart';
 
-/// Orchestrates speech-to-text with two back-ends:
+/// Speech-to-text orchestrator.
 ///
-/// - **Bengali (`'bn'`):** offline streaming via [AudioPipeline] → sherpa-onnx
-///   zipformer. Full streaming partial results, no network required.
+/// Currently both `'bn'` (Bengali) and `'en'` (English) route through the
+/// platform/Google built-in speech recognizer via the `speech_to_text`
+/// package.  Bengali uses locale `bn-BD` and falls back to the online
+/// recognizer if the on-device pack isn't installed; English uses `en_US`.
 ///
-/// - **English (`'en'`):** Android's built-in speech recognizer via the
-///   `speech_to_text` package. Uses the on-device (offline) English model that
-///   ships with most Android phones. No model bundling needed.
-///
-/// The active back-end is selected by [setLocale].  Switch happens on the next
-/// [startListening] call — no app restart required.
-///
-/// Partial transcription results are emitted via [onResult] with
-/// `isFinal = false`; the final result is emitted with `isFinal = true`.
+/// The original offline Bengali back-end (sherpa-onnx Zipformer) is kept in
+/// commented-out form below so it can be re-attached without rebuilding from
+/// scratch.
 class SpeechService {
   static SpeechService? _instance;
 
@@ -31,10 +31,10 @@ class SpeechService {
   String _lastRecognizedWords = '';
   String _currentLocaleId = 'bn'; // Bengali is the default
 
-  // ─── Bengali back-end ─────────────────────────────────────────────
-  final AudioPipeline _pipeline = AudioPipeline();
+  // ─── Sherpa offline Bengali back-end (DISABLED) ───────────────────
+  // final AudioPipeline _pipeline = AudioPipeline();
 
-  // ─── English back-end ─────────────────────────────────────────────
+  // ─── Google / Android built-in STT ────────────────────────────────
   final SpeechToText _androidStt = SpeechToText();
   bool _androidSttAvailable = false;
 
@@ -63,38 +63,43 @@ class SpeechService {
   }
 
   SpeechService._() {
-    _pipeline.onStatus = (status) => onStatus?.call(status);
-    _pipeline.onError = (error) => onError?.call(error);
-    _pipeline.onPartialResult = (text) => onResult?.call(text, false);
+    // Sherpa pipeline wiring — disabled along with the Bengali offline engine.
+    // _pipeline.onStatus = (status) => onStatus?.call(status);
+    // _pipeline.onError = (error) => onError?.call(error);
+    // _pipeline.onPartialResult = (text) => onResult?.call(text, false);
   }
 
   bool get isListening => _isListening;
   bool get isInitialized => _isInitialized;
   String get lastWords => _lastRecognizedWords;
 
+  /// Resolve the platform STT locale for the active app locale.
+  String get _platformLocaleId =>
+      _currentLocaleId == 'en' ? 'en_US' : 'bn-BD';
+
   // ─── Initialisation ───────────────────────────────────────────────
 
-  /// Prepare the active back-end for listening.
+  /// Prepare the Google/Android speech recognizer for listening.
   ///
-  /// Must succeed before [startListening] is called; called automatically
-  /// if skipped.  Returns `false` and fires [onError] on failure.
+  /// Returns `false` and fires [onError] on failure.
   Future<bool> initialize() async {
     if (_isInitialized) return true;
 
     try {
-      if (_currentLocaleId == 'en') {
-        return await _initAndroidStt();
-      } else {
-        if (!await _pipeline.hasPermission()) {
-          onError?.call(
-            'মাইক্রোফোনের অনুমতি দেওয়া হয়নি / Microphone permission not granted',
-          );
-          return false;
-        }
-        await SttEngineFactory.getEngine('bn').initialize();
-        _isInitialized = true;
-        return true;
-      }
+      return await _initAndroidStt();
+
+      // Sherpa offline Bengali path — disabled.
+      // if (_currentLocaleId == 'bn') {
+      //   if (!await _pipeline.hasPermission()) {
+      //     onError?.call(
+      //       'মাইক্রোফোনের অনুমতি দেওয়া হয়নি / Microphone permission not granted',
+      //     );
+      //     return false;
+      //   }
+      //   await SttEngineFactory.getEngine('bn').initialize();
+      //   _isInitialized = true;
+      //   return true;
+      // }
     } catch (e) {
       debugPrint('SpeechService init error: $e');
       onError?.call(
@@ -104,7 +109,7 @@ class SpeechService {
     }
   }
 
-  /// Initialize the Android built-in STT back-end.
+  /// Initialize the Android/Google built-in STT back-end.
   ///
   /// Sets global [onError]/[onStatus] callbacks on the [SpeechToText]
   /// instance — these fire for every session, not just initialization.
@@ -123,7 +128,7 @@ class SpeechService {
           return;
         }
         onError?.call(
-          'ইংরেজি ভয়েস রিকগনিশন ত্রুটি / English STT error: ${error.errorMsg}',
+          'ভয়েস রিকগনিশন ত্রুটি / STT error: ${error.errorMsg}',
         );
         _isListening = false;
         _completeAndroidStt();
@@ -142,10 +147,8 @@ class SpeechService {
 
     if (!_androidSttAvailable) {
       onError?.call(
-        'এই ডিভাইসে ইংরেজি ভয়েস রিকগনিশন সমর্থিত নয়।\n'
-        'সেটিংস থেকে বাংলা মোড ব্যবহার করুন।\n\n'
-        'English speech recognition is not available on this device.\n'
-        'Please switch to Bangla mode in Settings.',
+        'এই ডিভাইসে ভয়েস রিকগনিশন সমর্থিত নয়।\n'
+        'Speech recognition is not available on this device.',
       );
       return false;
     }
@@ -157,10 +160,7 @@ class SpeechService {
 
   // ─── Recording + Transcription ────────────────────────────────────
 
-  /// Begin listening for speech.
-  ///
-  /// For Bengali: streams PCM audio through the sherpa-onnx pipeline.
-  /// For English: delegates to Android's built-in speech recognizer.
+  /// Begin listening for speech via Google/Android STT.
   ///
   /// Partial results arrive via [onResult](text, false).
   /// Final result arrives via [onResult](text, true).
@@ -175,20 +175,21 @@ class SpeechService {
     _lastRecognizedWords = '';
     _isListening = true;
 
-    if (_currentLocaleId == 'en') {
-      await _startAndroidListening();
-    } else {
-      try {
-        final text = await _pipeline.run();
-        _lastRecognizedWords = text;
-        onResult?.call(text, true);
-      } catch (e) {
-        debugPrint('SpeechService Bengali error: $e');
-        onError?.call('ট্রান্সক্রিপশন ত্রুটি / Transcription error: $e');
-      } finally {
-        _isListening = false;
-      }
-    }
+    await _startAndroidListening();
+
+    // Sherpa offline Bengali path — disabled.
+    // if (_currentLocaleId == 'bn') {
+    //   try {
+    //     final text = await _pipeline.run();
+    //     _lastRecognizedWords = text;
+    //     onResult?.call(text, true);
+    //   } catch (e) {
+    //     debugPrint('SpeechService Bengali error: $e');
+    //     onError?.call('ট্রান্সক্রিপশন ত্রুটি / Transcription error: $e');
+    //   } finally {
+    //     _isListening = false;
+    //   }
+    // }
   }
 
   /// Start an Android STT session and wait for it to complete.
@@ -216,7 +217,7 @@ class SpeechService {
       },
       listenFor: const Duration(seconds: 20),
       pauseFor: const Duration(seconds: 2),
-      localeId: 'en_US',
+      localeId: _platformLocaleId,
       listenOptions: SpeechListenOptions(
         cancelOnError: true,
         partialResults: true,
@@ -253,26 +254,28 @@ class SpeechService {
   Future<void> stopListening() async {
     if (!_isListening) return;
 
-    if (_currentLocaleId == 'en') {
-      // stop() asks the recognizer for a final result; callbacks handle cleanup.
-      await _androidStt.stop();
-    } else {
-      await _pipeline.cancel();
-      _isListening = false;
-      onStatus?.call('done');
-    }
+    // stop() asks the recognizer for a final result; callbacks handle cleanup.
+    await _androidStt.stop();
+
+    // Sherpa offline path — disabled.
+    // if (_currentLocaleId == 'bn') {
+    //   await _pipeline.cancel();
+    //   _isListening = false;
+    //   onStatus?.call('done');
+    // }
   }
 
   /// Cancel recording without delivering a result.
   Future<void> cancelListening() async {
     if (!_isListening) return;
 
-    if (_currentLocaleId == 'en') {
-      await _androidStt.cancel();
-      _completeAndroidStt();
-    } else {
-      await _pipeline.cancel();
-    }
+    await _androidStt.cancel();
+    _completeAndroidStt();
+
+    // Sherpa offline path — disabled.
+    // if (_currentLocaleId == 'bn') {
+    //   await _pipeline.cancel();
+    // }
 
     _isListening = false;
     _lastRecognizedWords = '';
@@ -281,11 +284,11 @@ class SpeechService {
 
   // ─── Locale ───────────────────────────────────────────────────────
 
-  /// Switch the active back-end to [localeId] (`'bn'` or `'en'`).
+  /// Switch the active locale to [localeId] (`'bn'` or `'en'`).
   ///
-  /// Cancels any active session, disposes the current engine, and resets
-  /// initialisation so the new back-end is prepared on the next
-  /// [startListening] call.
+  /// Cancels any active session.  Both locales share the Android STT
+  /// recognizer, so we do not need to dispose engines — just reset the flag
+  /// so the next [startListening] reconfigures with the new locale.
   Future<void> setLocale(String localeId) async {
     assert(
       localeId == 'bn' || localeId == 'en',
@@ -295,15 +298,12 @@ class SpeechService {
 
     if (_isListening) await cancelListening();
 
-    // Dispose the Bengali engine if we're leaving that path.
-    if (_currentLocaleId == 'bn') {
-      SttEngineFactory.disposeEngine('bn');
-    }
-    // Android STT doesn't hold persistent resources between sessions.
+    // Sherpa engine disposal — disabled along with the Bengali offline path.
+    // if (_currentLocaleId == 'bn') {
+    //   SttEngineFactory.disposeEngine('bn');
+    // }
 
     _currentLocaleId = localeId;
-    _isInitialized = false;
-    _androidSttAvailable = false;
     debugPrint('SpeechService: locale set to $localeId');
   }
 

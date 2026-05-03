@@ -1,8 +1,20 @@
-/// Configuration shared across services.
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
+/// API configuration for Groq (LLaMA-based intent recognition).
 ///
-/// Groq API constants have been removed — intent recognition now runs
-/// fully on-device via LiteRT-LM (see LlmService + MainActivity.kt).
+/// On-device LLM (Gemma 4 / LiteRT-LM) is currently disabled — see
+/// [LlmService] which has been commented out. Voice intents now go through
+/// the Groq HTTP API.
 class ApiConfig {
+  // Groq API Key — loaded from .env at runtime
+  static String get groqApiKey => dotenv.env['GROQ_API_KEY'] ?? '';
+
+  // Groq API endpoint
+  static const String groqBaseUrl = 'https://api.groq.com/openai/v1';
+
+  // Models
+  static const String llamaModel = 'llama-3.3-70b-versatile';
+
   // System prompt for voice navigation
   static const String systemPrompt = '''
 You are a voice assistant for a smart cane navigation app for visually impaired users in Bangladesh.

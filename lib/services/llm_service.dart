@@ -1,3 +1,15 @@
+// On-device LLM (Gemma 4 E2B via LiteRT-LM) is currently disabled.
+// Voice intents are handled by GroqService (cloud-hosted LLaMA 3.3 70B).
+// The full implementation is preserved below in a block comment so it can
+// be restored when the Gemma model is re-bundled.
+//
+// To re-enable:
+//   1. Uncomment the code below.
+//   2. Re-add the model asset in pubspec.yaml.
+//   3. Swap GroqService back to LlmService in voice_navigation_service.dart.
+//   4. Set AppConstants.enableLlm = true.
+
+/*
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -130,3 +142,4 @@ class LlmService {
     );
   }
 }
+*/
