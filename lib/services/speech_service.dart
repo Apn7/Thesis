@@ -30,6 +30,7 @@ class SpeechService {
   bool _isListening = false;
   String _lastRecognizedWords = '';
   String _currentLocaleId = 'bn'; // Bengali is the default
+  String? _resolvedBengaliLocale;
 
   // ─── Sherpa offline Bengali back-end (DISABLED) ───────────────────
   // final AudioPipeline _pipeline = AudioPipeline();
@@ -50,6 +51,28 @@ class SpeechService {
   /// Completer used to block [startListening] until the Android STT session
   /// finishes (either a final result, silence timeout, or cancellation).
   Completer<void>? _androidSttCompleter;
+
+  /// True between [startListening] and [stopListening]/[cancelListening].
+  /// While set, the Android recognizer is restarted transparently on any
+  /// transient error (cold-start race, silence timeout, no-match) so that
+  /// "hold to talk" actually waits for the user to speak.
+  bool _pttHoldActive = false;
+
+  /// Set inside the global [SpeechToText] error handler when a transient
+  /// failure fires during PTT — picked up by the listen loop to decide
+  /// whether to silently restart the recognizer instead of bubbling up.
+  bool _retryRequested = false;
+
+  /// Errors that the Android speech recognizer raises for "nothing was said"
+  /// or "service wasn't ready" — these are normal in push-to-talk and must
+  /// not abort the user's hold.  Anything outside this set is surfaced as a
+  /// real error.
+  static const Set<String> _retryableErrors = {
+    'error_no_match',
+    'error_speech_timeout',
+    'error_client',
+    'error_recognizer_busy',
+  };
 
   // ─── Callbacks ────────────────────────────────────────────────────
   Function(String text, bool isFinal)? onResult;
@@ -74,8 +97,10 @@ class SpeechService {
   String get lastWords => _lastRecognizedWords;
 
   /// Resolve the platform STT locale for the active app locale.
-  String get _platformLocaleId =>
-      _currentLocaleId == 'en' ? 'en_US' : 'bn-BD';
+  String get _platformLocaleId {
+    if (_currentLocaleId == 'en') return 'en_US';
+    return _resolvedBengaliLocale ?? 'bn_BD';
+  }
 
   // ─── Initialisation ───────────────────────────────────────────────
 
@@ -119,14 +144,31 @@ class SpeechService {
         debugPrint(
           'AndroidSTT error: ${error.errorMsg} (permanent=${error.permanent})',
         );
-        if (error.errorMsg == 'error_language_unavailable' && _useOnDevice) {
-          // On-device pack not installed — retry this session without it.
-          debugPrint('AndroidSTT: on-device pack unavailable, will retry online.');
+
+        // Locale pack missing — retry this session over the online recognizer.
+        if ((error.errorMsg == 'error_language_unavailable' ||
+            error.errorMsg == 'error_language_not_supported') && _useOnDevice) {
+          debugPrint('AndroidSTT: on-device pack unavailable, retrying online.');
           _useOnDevice = false;
           _languageUnavailableRetry = true;
           _completeAndroidStt();
           return;
         }
+
+        // Transparent retry while the user is still holding the PTT button:
+        // covers the cold-start race (error_client) and the no-speech-yet
+        // case (error_no_match / error_speech_timeout).
+        if (_pttHoldActive && _retryableErrors.contains(error.errorMsg)) {
+          debugPrint(
+            'AndroidSTT: transient "${error.errorMsg}" while PTT held — '
+            'silent retry',
+          );
+          _retryRequested = true;
+          _completeAndroidStt();
+          return;
+        }
+
+        // Anything else is a real error — bubble up.
         onError?.call(
           'ভয়েস রিকগনিশন ত্রুটি / STT error: ${error.errorMsg}',
         );
@@ -139,7 +181,10 @@ class SpeechService {
           onStatus?.call('listening');
         } else if (status == SpeechToText.doneStatus ||
             status == SpeechToText.notListeningStatus) {
-          _isListening = false;
+          // Only mark the session done from a status event when we are NOT
+          // mid-PTT-retry — otherwise the retry would race against the
+          // session teardown.
+          if (!_retryRequested) _isListening = false;
           _completeAndroidStt();
         }
       },
@@ -151,6 +196,19 @@ class SpeechService {
         'Speech recognition is not available on this device.',
       );
       return false;
+    }
+
+    try {
+      final locales = await _androidStt.locales();
+      for (final locale in locales) {
+        if (locale.localeId.startsWith('bn')) {
+          _resolvedBengaliLocale = locale.localeId;
+          debugPrint('SpeechService: Found Bengali locale -> ${locale.localeId}');
+          break; // Prefer the first one found (e.g., bn_BD, bn_IN)
+        }
+      }
+    } catch (e) {
+      debugPrint('SpeechService: Failed to fetch locales: $e');
     }
 
     _isInitialized = true;
@@ -174,6 +232,7 @@ class SpeechService {
 
     _lastRecognizedWords = '';
     _isListening = true;
+    _pttHoldActive = true;
 
     await _startAndroidListening();
 
@@ -194,45 +253,77 @@ class SpeechService {
 
   /// Start an Android STT session and wait for it to complete.
   ///
-  /// If [error_language_unavailable] fires (on-device pack not installed),
-  /// the session retries once with [onDevice:false] (online recognizer).
-  /// After the first retry [_useOnDevice] stays false for all future sessions.
+  /// Loops the recognizer transparently for two reasons:
+  ///   1. **Cold-start race** — the very first `listen()` after process
+  ///      launch sometimes fails with `error_client` because the system
+  ///      `SpeechRecognizer` service hasn't fully bound yet.  A second
+  ///      attempt almost always succeeds.
+  ///   2. **Push-to-talk semantics** — if the user holds the button without
+  ///      speaking, Android raises `error_no_match` /
+  ///      `error_speech_timeout`.  We restart the recognizer silently so
+  ///      that "hold to talk" really waits for speech.
+  ///
+  /// The loop exits when:
+  ///   - a final transcription result arrives,
+  ///   - the user releases the button ([_pttHoldActive] becomes false),
+  ///   - or a non-retryable error occurs.
+  ///
+  /// `error_language_unavailable` is also handled here — once, by flipping
+  /// to the online recognizer and retrying.
   Future<void> _startAndroidListening() async {
     _languageUnavailableRetry = false;
-
-    final completer = Completer<void>();
-    _androidSttCompleter = completer;
     bool gotFinalResult = false;
 
     onStatus?.call('listening');
 
-    await _androidStt.listen(
-      onResult: (SpeechRecognitionResult result) {
-        onResult?.call(result.recognizedWords, result.finalResult);
-        if (result.finalResult) {
-          gotFinalResult = true;
-          _lastRecognizedWords = result.recognizedWords;
-          _completeAndroidStt();
-        }
-      },
-      listenFor: const Duration(seconds: 20),
-      pauseFor: const Duration(seconds: 2),
-      localeId: _platformLocaleId,
-      listenOptions: SpeechListenOptions(
-        cancelOnError: true,
-        partialResults: true,
-        onDevice: _useOnDevice,
-      ),
-    );
+    while (true) {
+      _retryRequested = false;
+      final completer = Completer<void>();
+      _androidSttCompleter = completer;
 
-    await completer.future;
+      await _androidStt.listen(
+        onResult: (SpeechRecognitionResult result) {
+          onResult?.call(result.recognizedWords, result.finalResult);
+          if (result.finalResult) {
+            gotFinalResult = true;
+            _lastRecognizedWords = result.recognizedWords;
+            _completeAndroidStt();
+          }
+        },
+        // Long windows on purpose — the PTT button controls when listening
+        // stops, not these timeouts.  They only act as a hard ceiling.
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 30),
+        localeId: _platformLocaleId,
+        listenOptions: SpeechListenOptions(
+          cancelOnError: true,
+          partialResults: true,
+          onDevice: _useOnDevice,
+        ),
+      );
 
-    // On-device pack unavailable — retry transparently with online recognizer.
-    if (_languageUnavailableRetry) {
-      _languageUnavailableRetry = false;
-      debugPrint('AndroidSTT: retrying with onDevice=false');
-      await _startAndroidListening();
-      return;
+      await completer.future;
+
+      // (a) On-device pack missing → retry online (one-shot, then sticky).
+      if (_languageUnavailableRetry) {
+        _languageUnavailableRetry = false;
+        debugPrint('AndroidSTT: retrying with onDevice=false');
+        continue;
+      }
+
+      // (b) User got their result → done.
+      if (gotFinalResult) break;
+
+      // (c) Transient error while PTT still held → silent restart.
+      if (_pttHoldActive && _retryRequested) {
+        // Tiny delay — Android needs a moment to release the recognizer
+        // before we can rebind it.
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        continue;
+      }
+
+      // (d) Released button or unrecoverable error → exit.
+      break;
     }
 
     if (!gotFinalResult) {
@@ -241,6 +332,7 @@ class SpeechService {
 
     onStatus?.call('done');
     _isListening = false;
+    _pttHoldActive = false;
   }
 
   /// Complete (or no-op if already done) the active Android STT completer.
@@ -253,6 +345,10 @@ class SpeechService {
   /// Stop recording and request the final result.
   Future<void> stopListening() async {
     if (!_isListening) return;
+
+    // PTT released → break the retry loop in _startAndroidListening so the
+    // recognizer doesn't auto-restart after stop().
+    _pttHoldActive = false;
 
     // stop() asks the recognizer for a final result; callbacks handle cleanup.
     await _androidStt.stop();
@@ -269,6 +365,7 @@ class SpeechService {
   Future<void> cancelListening() async {
     if (!_isListening) return;
 
+    _pttHoldActive = false;
     await _androidStt.cancel();
     _completeAndroidStt();
 
