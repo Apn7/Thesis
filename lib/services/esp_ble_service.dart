@@ -27,13 +27,13 @@ extension EspVerdictX on EspVerdict {
   String get speechText {
     switch (this) {
       case EspVerdict.critical:
-        return 'বিপদ। সামনে বাধা। CRITICAL: obstacle ahead.';
+        return 'বিপদ! সামনে বাধা আছে।';
       case EspVerdict.warning:
-        return 'সতর্ক হোন। WARNING: object close.';
+        return 'সতর্ক হোন। সামনে কিছু আছে।';
       case EspVerdict.caution:
-        return 'CAUTION: object detected.';
+        return 'সাবধান। কিছু একটা কাছে আছে।';
       case EspVerdict.safe:
-        return 'SAFE.';
+        return '';
       case EspVerdict.noData:
         return '';
     }

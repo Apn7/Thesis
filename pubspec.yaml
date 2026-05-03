@@ -41,9 +41,8 @@ dependencies:
   geolocator: ^10.1.0
   geocoding: ^2.1.1
   
-  # Text-to-Speech
-  # NOTE: flutter_tts removed due to Windows CMake issues
-  # Using stub implementation for thesis demo
+  # Text-to-Speech (Android only; Windows stub used on desktop)
+  flutter_tts: ^4.2.0
   
   # Speech Recognition
   speech_to_text: ^7.0.0
@@ -96,8 +95,10 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - .env
-    - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
-    - assets/models/gemma-4-E2B-it.litertlm
+    # Removed to reduce APK size — re-add when Bengali STT is needed:
+    # - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
+    # Removed to reduce APK size — re-add when on-device LLM is needed:
+    # - assets/models/gemma-4-E2B-it.litertlm
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 

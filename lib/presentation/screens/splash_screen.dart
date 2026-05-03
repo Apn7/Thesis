@@ -3,12 +3,12 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/constants.dart';
-import '../../services/llm_service.dart';
+// import '../../core/utils/constants.dart'; // only needed for enableLlm flag — disabled
+// import '../../services/llm_service.dart'; // on-device LLM — disabled to reduce APK size
 import '../../services/settings_service.dart';
-import '../../services/speech_service.dart';
-import '../../services/stt/model_asset_manager.dart';
-import '../../services/stt/sherpa_model_config.dart';
+// import '../../services/speech_service.dart'; // Bengali STT — disabled to reduce APK size
+// import '../../services/stt/model_asset_manager.dart'; // Bengali STT — disabled
+// import '../../services/stt/sherpa_model_config.dart'; // Bengali STT — disabled
 
 /// First-launch setup screen: copies bundled model assets to local storage,
 /// then navigates to the home screen automatically.
@@ -59,8 +59,8 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _setup() async {
     try {
       await _requestPermissions();
-      await _copyModels();
-      if (AppConstants.enableLlm) await _initLlm();
+      // await _copyModels();                            // Bengali STT model — disabled
+      // if (AppConstants.enableLlm) await _initLlm();  // on-device LLM — disabled
       await _initServices();
     } catch (e) {
       debugPrint('SplashScreen setup error: $e');
@@ -125,34 +125,27 @@ class _SplashScreenState extends State<SplashScreen>
     _update('অনুমতি সম্পন্ন ✓', 'Permissions done ✓', 0.04);
   }
 
-  Future<void> _copyModels() async {
-    // ── Bengali STT (only bundled model — English uses Android built-in) ──
-    _update(
-      'বাংলা ভয়েস মডেল প্রস্তুত হচ্ছে...',
-      'Preparing Bengali voice model...',
-      0.05,
-    );
-    await ModelAssetManager.ensureSherpaModel(kBengaliSherpaConfig);
-    _update('মডেল প্রস্তুত ✓', 'Model ready ✓', 0.80);
-  }
+  // Bengali STT model copy — disabled to reduce APK size
+  // Future<void> _copyModels() async {
+  //   _update('বাংলা ভয়েস মডেল প্রস্তুত হচ্ছে...', 'Preparing Bengali voice model...', 0.05);
+  //   await ModelAssetManager.ensureSherpaModel(kBengaliSherpaConfig);
+  //   _update('মডেল প্রস্তুত ✓', 'Model ready ✓', 0.80);
+  // }
 
-  Future<void> _initLlm() async {
-    // First launch: the Kotlin side copies ~2.58 GB from APK assets to device
-    // storage before loading the engine — this can take a minute on slow
-    // storage.  Subsequent launches skip the copy and complete in seconds.
-    _update('AI মডেল লোড হচ্ছে...', 'Loading AI model...', 0.82);
-    await LlmService.instance.init();
-    _update('AI মডেল প্রস্তুত ✓', 'AI model ready ✓', 0.92);
-  }
+  // On-device LLM init — disabled to reduce APK size
+  // Future<void> _initLlm() async {
+  //   _update('AI মডেল লোড হচ্ছে...', 'Loading AI model...', 0.82);
+  //   await LlmService.instance.init();
+  //   _update('AI মডেল প্রস্তুত ✓', 'AI model ready ✓', 0.92);
+  // }
 
   Future<void> _initServices() async {
     _update('সার্ভিস চালু হচ্ছে...', 'Starting services...', 0.94);
     await SettingsService.instance.load();
-    await SpeechService.instance.setLocale(
-      SettingsService.instance.languageMode,
-    );
+    // await SpeechService.instance.setLocale(  // Bengali STT — disabled
+    //   SettingsService.instance.languageMode,
+    // );
     _update('প্রস্তুত!', 'Ready!', 1.0);
-    // Brief pause so the user sees "Ready".
     await Future.delayed(const Duration(milliseconds: 400));
   }
 

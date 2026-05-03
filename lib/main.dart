@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+// import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa; // Bengali STT — disabled to reduce APK size
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_routes.dart';
 import 'presentation/screens/home_screen.dart';
@@ -13,8 +13,7 @@ import 'presentation/screens/splash_screen.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Required by sherpa_onnx before any recognizer can be created.
-  sherpa.initBindings();
+  // sherpa.initBindings(); // Bengali STT — disabled to reduce APK size
 
   // Load environment variables from .env
   await dotenv.load(fileName: ".env");

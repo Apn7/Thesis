@@ -1,23 +1,21 @@
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'tts_service.dart';
 
-// For Windows, use stub due to CMake issues
-// For mobile platforms, use real flutter_tts
 TtsService createTtsService() {
-  // On Windows, flutter_tts has broken CMake - use stub
   if (Platform.isWindows) {
     return TtsServiceWindowsStub();
   }
-  // On other platforms, we'd use the real implementation
-  // but for now, use stub everywhere since flutter_tts causes build issues
-  return TtsServiceWindowsStub();
+  return TtsServiceMobile();
 }
 
-/// Stub TTS implementation for Windows (flutter_tts has broken CMake support)
-class TtsServiceWindowsStub extends TtsService {
+// ── Android / mobile implementation ──────────────────────────────────────────
+
+class TtsServiceMobile extends TtsService {
+  final FlutterTts _tts = FlutterTts();
   bool _isSpeaking = false;
-  String _currentLanguage = 'en-US';
+  String _currentLanguage = 'bn-BD';
 
   @override
   bool get isSpeaking => _isSpeaking;
@@ -27,16 +25,70 @@ class TtsServiceWindowsStub extends TtsService {
 
   @override
   Future<void> initialize() async {
-    debugPrint(
-      '[TTS] Initialized (Windows stub mode - TTS disabled for thesis demo)',
-    );
+    await _tts.setLanguage(_currentLanguage);
+    await _tts.setSpeechRate(0.45);
+    await _tts.setVolume(1.0);
+    await _tts.setPitch(1.0);
+
+    _tts.setStartHandler(() => _isSpeaking = true);
+    _tts.setCompletionHandler(() => _isSpeaking = false);
+    _tts.setCancelHandler(() => _isSpeaking = false);
+    _tts.setErrorHandler((msg) {
+      _isSpeaking = false;
+      debugPrint('[TTS] Error: $msg');
+    });
+
+    debugPrint('[TTS] Initialized (Android, language: $_currentLanguage)');
+  }
+
+  @override
+  Future<void> speak(String text) async {
+    if (text.isEmpty) return;
+    // Stop any ongoing speech before starting new one so alerts never queue up.
+    await _tts.stop();
+    await _tts.speak(text);
+    debugPrint('[TTS] 🔊 "$text"');
+  }
+
+  @override
+  Future<void> stop() async {
+    await _tts.stop();
+    _isSpeaking = false;
+  }
+
+  @override
+  Future<void> setSpeechRate(double rate) async {
+    await _tts.setSpeechRate(rate);
+  }
+
+  @override
+  Future<void> setLanguage(String language) async {
+    _currentLanguage = language;
+    await _tts.setLanguage(language);
+  }
+}
+
+// ── Windows stub (flutter_tts CMake unsupported on Windows) ──────────────────
+
+class TtsServiceWindowsStub extends TtsService {
+  bool _isSpeaking = false;
+  String _currentLanguage = 'bn-BD';
+
+  @override
+  bool get isSpeaking => _isSpeaking;
+
+  @override
+  String get currentLanguage => _currentLanguage;
+
+  @override
+  Future<void> initialize() async {
+    debugPrint('[TTS] Initialized (Windows stub — audio disabled)');
   }
 
   @override
   Future<void> speak(String text) async {
     debugPrint('[TTS] 🔊 "$text"');
     _isSpeaking = true;
-    // Simulate speech duration based on text length
     final duration = (text.length * 50).clamp(500, 5000);
     await Future.delayed(Duration(milliseconds: duration));
     _isSpeaking = false;
@@ -45,17 +97,13 @@ class TtsServiceWindowsStub extends TtsService {
   @override
   Future<void> stop() async {
     _isSpeaking = false;
-    debugPrint('[TTS] Stopped');
   }
 
   @override
-  Future<void> setSpeechRate(double rate) async {
-    debugPrint('[TTS] Speech rate set to $rate');
-  }
+  Future<void> setSpeechRate(double rate) async {}
 
   @override
   Future<void> setLanguage(String language) async {
     _currentLanguage = language;
-    debugPrint('[TTS] Language set to $language');
   }
 }
