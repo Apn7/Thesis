@@ -8,7 +8,7 @@ import '../../core/navigation/app_routes.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
-import '../widgets/voice_indicator.dart';
+import '../widgets/colorful_waveform.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -198,7 +198,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _initializeServices() async {
     await _voiceService.initialize();
-    if (mounted) setState(() => _isInitialized = true);
     await Future.delayed(const Duration(milliseconds: 500));
     await _voiceService.speak(
       'স্মার্ট ক্যান অ্যাপে স্বাগতম। বলুন কোথায় যেতে চান। Welcome to Smart Cane. Say where you want to go.',
@@ -719,144 +718,135 @@ class _HomeScreenState extends State<HomeScreen>
         child: ListenableBuilder(
           listenable: _voiceService,
           builder: (context, child) {
-            return SingleChildScrollView(
-              padding: EdgeInsets.all(AppConstants.spacingL),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // ── Voice indicator card ──────────────────────────────────
-                  Card(
-                    elevation: 4,
-                    color: Theme.of(context).colorScheme.surface,
-                    child: Padding(
-                      padding: EdgeInsets.all(AppConstants.spacingXl),
-                      child: Column(
-                        children: [
-                          VoiceIndicator(
-                            isListening: _voiceService.isListening,
-                            size: 120,
-                          ),
-                          SizedBox(height: AppConstants.spacingL),
-                          Text(
-                            _voiceService.isProcessing
-                                ? 'চিন্তা করছি...'
-                                : _voiceService.isListening
-                                    ? 'শুনছি...'
-                                    : 'ভয়েস কমান্ড',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineSmall
-                                ?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: _voiceService.isListening
-                                      ? AppColors.accent
-                                      : _voiceService.isProcessing
-                                          ? AppColors.info
-                                          : AppColors.primary,
-                                ),
-                          ),
-                          SizedBox(height: AppConstants.spacingXs),
-                          Text(
-                            _voiceService.isProcessing
-                                ? 'Processing...'
-                                : _voiceService.isListening
-                                    ? 'Listening...'
-                                    : 'Voice Command',
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.copyWith(color: AppColors.textSecondary),
-                          ),
-                          if (_voiceService.currentTranscript.isNotEmpty) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            Container(
-                              padding: EdgeInsets.all(AppConstants.spacingM),
-                              decoration: BoxDecoration(
-                                color: AppColors.primaryLight
-                                    .withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(
-                                    AppConstants.radiusM),
+            return Stack(
+              children: [
+                SingleChildScrollView(
+                  padding: EdgeInsets.all(AppConstants.spacingL).copyWith(bottom: 160), // Add padding to bottom so it's not hidden by wave
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ── Voice interaction hints ──────────────────────────────────
+                      Card(
+                        elevation: 4,
+                        color: Theme.of(context).colorScheme.surface,
+                        child: Padding(
+                          padding: EdgeInsets.all(AppConstants.spacingXl),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.volume_up,
+                                size: 48,
+                                color: _voiceService.isListening
+                                    ? AppColors.accent
+                                    : AppColors.primary,
                               ),
-                              child: Text(
-                                '"${_voiceService.currentTranscript}"',
+                              SizedBox(height: AppConstants.spacingL),
+                              Text(
+                                _voiceService.isProcessing
+                                    ? 'চিন্তা করছি...'
+                                    : _voiceService.isListening
+                                        ? 'শুনছি...'
+                                        : 'ভয়েস কমান্ড',
                                 style: Theme.of(context)
                                     .textTheme
-                                    .bodyLarge
-                                    ?.copyWith(fontStyle: FontStyle.italic),
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: _voiceService.isListening
+                                          ? AppColors.accent
+                                          : _voiceService.isProcessing
+                                              ? AppColors.info
+                                              : AppColors.primary,
+                                    ),
+                              ),
+                              SizedBox(height: AppConstants.spacingXs),
+                              Text(
+                                _voiceService.isProcessing
+                                    ? 'Processing...'
+                                    : _voiceService.isListening
+                                        ? 'Listening...'
+                                        : 'Voice Command',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(color: AppColors.textSecondary),
+                              ),
+                              SizedBox(height: AppConstants.spacingM),
+                              Text(
+                                'কথা বলতে ভলিউম বোতাম চেপে ধরে রাখুন।\nPress and hold the Volume buttons to speak.',
                                 textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: AppColors.textSecondary,
+                                    ),
                               ),
-                            ),
-                          ],
-                          if (_voiceService.lastResponse.isNotEmpty &&
-                              !_voiceService.isListening &&
-                              !_voiceService.isProcessing) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            Container(
-                              padding: EdgeInsets.all(AppConstants.spacingM),
-                              decoration: BoxDecoration(
-                                color: AppColors.success.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(
-                                    AppConstants.radiusM),
-                                border: Border.all(
-                                  color:
-                                      AppColors.success.withValues(alpha: 0.3),
+                              if (_voiceService.currentTranscript.isNotEmpty) ...[
+                                SizedBox(height: AppConstants.spacingM),
+                                Container(
+                                  padding: EdgeInsets.all(AppConstants.spacingM),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primaryLight
+                                        .withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(
+                                        AppConstants.radiusM),
+                                  ),
+                                  child: Text(
+                                    '"${_voiceService.currentTranscript}"',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge
+                                        ?.copyWith(fontStyle: FontStyle.italic),
+                                    textAlign: TextAlign.center,
+                                  ),
                                 ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(Icons.check_circle,
-                                      color: AppColors.success),
-                                  SizedBox(width: AppConstants.spacingS),
-                                  Expanded(
-                                    child: Text(
-                                      _voiceService.lastResponse,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium,
+                              ],
+                              if (_voiceService.lastResponse.isNotEmpty &&
+                                  !_voiceService.isListening &&
+                                  !_voiceService.isProcessing) ...[
+                                SizedBox(height: AppConstants.spacingM),
+                                Container(
+                                  padding: EdgeInsets.all(AppConstants.spacingM),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.success.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(
+                                        AppConstants.radiusM),
+                                    border: Border.all(
+                                      color:
+                                          AppColors.success.withValues(alpha: 0.3),
                                     ),
                                   ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          SizedBox(height: AppConstants.spacingL),
-                          FilledButton.icon(
-                            onPressed:
-                                _isInitialized ? _toggleVoiceListening : null,
-                            icon: Icon(_voiceService.isListening
-                                ? Icons.mic_off
-                                : Icons.mic),
-                            label: Text(
-                              _voiceService.isListening
-                                  ? 'থামান (Stop)'
-                                  : 'শুরু করুন (Start)',
-                            ),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _voiceService.isListening
-                                  ? AppColors.error
-                                  : AppColors.accent,
-                              padding: EdgeInsets.symmetric(
-                                horizontal: AppConstants.spacingXl,
-                                vertical: AppConstants.spacingL,
-                              ),
-                            ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.check_circle,
+                                          color: AppColors.success),
+                                      SizedBox(width: AppConstants.spacingS),
+                                      Expanded(
+                                        child: Text(
+                                          _voiceService.lastResponse,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodyMedium,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                              if (_voiceService.error.isNotEmpty) ...[
+                                SizedBox(height: AppConstants.spacingM),
+                                Text(
+                                  _voiceService.error,
+                                  style: TextStyle(color: AppColors.error),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ],
+                            ],
                           ),
-                          if (_voiceService.error.isNotEmpty) ...[
-                            SizedBox(height: AppConstants.spacingM),
-                            Text(
-                              _voiceService.error,
-                              style: TextStyle(color: AppColors.error),
-                              textAlign: TextAlign.center,
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
 
-                  SizedBox(height: AppConstants.spacingL),
+                      SizedBox(height: AppConstants.spacingL),
 
-                  // ── ESP32 distance card ───────────────────────────────────
+                      // ── ESP32 distance card ───────────────────────────────────
                   if (AppConstants.enableEspBle) ...[
                     _buildEspCard(),
                     SizedBox(height: AppConstants.spacingL),
@@ -967,9 +957,21 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ],
               ),
-            );
-          },
-        ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: IgnorePointer(
+                child: ColorfulWaveform(
+                  isListening: _voiceService.isListening,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
       ),
     );
   }
