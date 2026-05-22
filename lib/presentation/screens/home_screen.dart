@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-// import 'package:vibration/vibration.dart'; // Pi alerts — disabled
+import 'package:vibration/vibration.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
@@ -39,6 +39,10 @@ class _HomeScreenState extends State<HomeScreen>
   /// while an obstacle remains in the same zone (stationary obstacle case).
   Timer? _espRepeatTimer;
 
+  /// Periodic timer that repeats vibration pulses while a danger verdict
+  /// is active, so the phone keeps buzzing even if TTS is mid-speech.
+  Timer? _vibrationTimer;
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +75,8 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _espRepeatTimer?.cancel();
+    _vibrationTimer?.cancel();
+    Vibration.cancel(); // stop any ongoing vibration immediately
     // _alertClearTimer?.cancel();       // Pi BLE — disabled
     // _alertAnimController.dispose();   // Pi BLE — disabled
     // if (AppConstants.enablePiBle) {   // Pi BLE — disabled
@@ -115,14 +121,20 @@ class _HomeScreenState extends State<HomeScreen>
       _espRepeatTimer?.cancel();
       _espRepeatTimer = null;
 
-      // Path is clear — stop any ongoing warning speech immediately.
+      // Cancel any existing vibration loop on every verdict transition.
+      _vibrationTimer?.cancel();
+      _vibrationTimer = null;
+
+      // Path is clear — stop any ongoing warning speech and vibration.
       if (verdict == EspVerdict.safe || verdict == EspVerdict.noData) {
         _voiceService.stopSpeaking();
+        Vibration.cancel();
         return;
       }
 
-      // Speak immediately on entering a danger zone.
+      // Speak and vibrate immediately on entering a danger zone.
       _voiceService.speak(verdict.speechText);
+      _vibrateForVerdict(verdict);
 
       // Re-announce every 5 s while the obstacle stays in the same zone,
       // using the live verdict so the message stays accurate if distance drifts.
@@ -134,10 +146,13 @@ class _HomeScreenState extends State<HomeScreen>
         final current = _espBleService.verdict;
         if (current == EspVerdict.safe || current == EspVerdict.noData) {
           _espRepeatTimer?.cancel();
+          _vibrationTimer?.cancel();
+          Vibration.cancel();
           _voiceService.stopSpeaking();
           return;
         }
         _voiceService.speak(current.speechText);
+        _vibrateForVerdict(current);
       });
     };
 
@@ -195,6 +210,56 @@ class _HomeScreenState extends State<HomeScreen>
   //     Vibration.vibrate(duration: 150);
   //   }
   // }
+
+  /// Trigger phone vibration based on the current ESP32 distance verdict.
+  ///
+  /// Uses the `vibration` package which relies on the VIBRATE permission
+  /// (already declared in AndroidManifest.xml — a normal permission that is
+  /// granted automatically at install time, no runtime prompt needed).
+  ///
+  /// For CRITICAL verdicts a repeating vibration timer fires rapid bursts
+  /// every 800 ms so the phone buzzes continuously until the obstacle clears.
+  /// WARNING uses a slower repeat (every 1.5 s) and CAUTION is a one-shot.
+  void _vibrateForVerdict(EspVerdict verdict) async {
+    // Safety check — skip gracefully if no vibrator hardware.
+    final hasVibrator = await Vibration.hasVibrator();
+    if (hasVibrator != true) return;
+
+    // Stop any prior vibration loop before starting a new one.
+    _vibrationTimer?.cancel();
+    _vibrationTimer = null;
+    Vibration.cancel();
+
+    switch (verdict) {
+      case EspVerdict.critical:
+        // Aggressive rapid pulses: vibrate 400 ms, pause 150 ms, repeat.
+        Vibration.vibrate(pattern: [0, 400, 150, 400, 150, 400]);
+        // Keep pulsing every 800 ms so the phone never stops buzzing.
+        _vibrationTimer = Timer.periodic(
+          const Duration(milliseconds: 800),
+          (_) => Vibration.vibrate(duration: 400),
+        );
+        break;
+      case EspVerdict.warning:
+        // Medium pulses: vibrate 250 ms, pause 120 ms, vibrate 250 ms.
+        Vibration.vibrate(pattern: [0, 250, 120, 250]);
+        // Repeat every 1.5 s to remind the user.
+        _vibrationTimer = Timer.periodic(
+          const Duration(milliseconds: 1500),
+          (_) => Vibration.vibrate(duration: 250),
+        );
+        break;
+      case EspVerdict.caution:
+        // Single light pulse — no repeating timer.
+        Vibration.vibrate(duration: 150);
+        break;
+      case EspVerdict.safe:
+      case EspVerdict.noData:
+        // Should not reach here (caller guards), but cancel just in case.
+        Vibration.cancel();
+        break;
+    }
+  }
 
   Future<void> _initializeServices() async {
     await _voiceService.initialize();
