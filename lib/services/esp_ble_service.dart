@@ -23,19 +23,39 @@ extension EspVerdictX on EspVerdict {
     }
   }
 
-  /// Bilingual short message for TTS announcements.
+  /// Short Bangla word spoken on verdict *escalation* (severity goes up).
+  /// Continuous distance feedback is carried by the click + vibration
+  /// cadence in the UI layer; speech is reserved for the moment the
+  /// situation gets worse, so the user is informed without being alarmed
+  /// or talked over every few seconds.
   String get speechText {
     switch (this) {
       case EspVerdict.critical:
-        return 'বিপদ! সামনে বাধা আছে।';
+        return 'থামুন';
       case EspVerdict.warning:
-        return 'সতর্ক হোন। সামনে কিছু আছে।';
+        return 'খুব কাছে';
       case EspVerdict.caution:
-        return 'সাবধান। কিছু একটা কাছে আছে।';
+        return 'কাছে';
       case EspVerdict.safe:
         return '';
       case EspVerdict.noData:
         return '';
+    }
+  }
+
+  /// Ordinal severity for escalation comparisons.  Speech fires only when
+  /// this value strictly increases between consecutive readings.
+  int get severity {
+    switch (this) {
+      case EspVerdict.critical:
+        return 3;
+      case EspVerdict.warning:
+        return 2;
+      case EspVerdict.caution:
+        return 1;
+      case EspVerdict.safe:
+      case EspVerdict.noData:
+        return 0;
     }
   }
 }
@@ -105,7 +125,10 @@ class EspBleService extends ChangeNotifier {
       if (s == BluetoothAdapterState.on) {
         if (_state == EspBleState.bluetoothOff ||
             _state == EspBleState.disconnected) {
-          _updateState(EspBleState.disconnected, 'Bluetooth on. Ready to scan.');
+          _updateState(
+            EspBleState.disconnected,
+            'Bluetooth on. Ready to scan.',
+          );
           startScanning();
         }
       } else {
@@ -161,24 +184,21 @@ class EspBleService extends ChangeNotifier {
     }
 
     try {
-      final scanSub = FlutterBluePlus.onScanResults.listen(
-        (results) {
-          for (final r in results) {
-            final name = r.device.platformName;
-            final advName = r.advertisementData.advName;
-            final match = name.isNotEmpty ? name : advName;
-            if (match.toLowerCase().contains(
-              AppConstants.espBleDeviceName.toLowerCase(),
-            )) {
-              debugPrint('>> ESP BLE: ★★★ ESP32 FOUND, connecting...');
-              FlutterBluePlus.stopScan();
-              _connectToDevice(r.device);
-              return;
-            }
+      final scanSub = FlutterBluePlus.onScanResults.listen((results) {
+        for (final r in results) {
+          final name = r.device.platformName;
+          final advName = r.advertisementData.advName;
+          final match = name.isNotEmpty ? name : advName;
+          if (match.toLowerCase().contains(
+            AppConstants.espBleDeviceName.toLowerCase(),
+          )) {
+            debugPrint('>> ESP BLE: ★★★ ESP32 FOUND, connecting...');
+            FlutterBluePlus.stopScan();
+            _connectToDevice(r.device);
+            return;
           }
-        },
-        onError: (e) => debugPrint('>> ESP BLE: Scan error: $e'),
-      );
+        }
+      }, onError: (e) => debugPrint('>> ESP BLE: Scan error: $e'));
       FlutterBluePlus.cancelWhenScanComplete(scanSub);
 
       await FlutterBluePlus.startScan(
@@ -286,7 +306,10 @@ class EspBleService extends ChangeNotifier {
 
       await distChar.setNotifyValue(true);
 
-      _updateState(EspBleState.connected, 'Connected to ${device.platformName} ✓');
+      _updateState(
+        EspBleState.connected,
+        'Connected to ${device.platformName} ✓',
+      );
       debugPrint('>> ESP BLE: ===== READY — STREAMING DISTANCE =====');
     } catch (e) {
       debugPrint('>> ESP BLE: Discover/subscribe failed: $e');

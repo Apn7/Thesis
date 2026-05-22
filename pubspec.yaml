@@ -58,6 +58,9 @@ dependencies:
 
   # Reliable cross-device vibration with custom patterns
   vibration: ^2.0.0
+
+  # Plays the CRITICAL-state alert tone from assets/alerts/.
+  audioplayers: ^6.1.0
   record: ^6.2.0
   shared_preferences: ^2.3.5
   path_provider: ^2.1.5
@@ -96,6 +99,7 @@ flutter:
   assets:
     - .env
     - assets/intents/intents.json
+    - assets/alerts/
     # Removed to reduce APK size — re-add when Bengali STT is needed:
     # - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
     # Removed to reduce APK size — re-add when on-device LLM is needed:

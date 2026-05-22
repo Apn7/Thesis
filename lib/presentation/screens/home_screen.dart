@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:vibration/vibration.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
@@ -35,13 +36,21 @@ class _HomeScreenState extends State<HomeScreen>
   // late final Animation<double> _alertScale;
   // late final Animation<double> _alertOpacity;
 
-  /// Periodic timer that re-announces the active ESP32 verdict every 5 s
-  /// while an obstacle remains in the same zone (stationary obstacle case).
-  Timer? _espRepeatTimer;
-
-  /// Periodic timer that repeats vibration pulses while a danger verdict
-  /// is active, so the phone keeps buzzing even if TTS is mid-speech.
+  /// Repeating vibration timer for CRITICAL / WARNING — keeps the phone
+  /// buzzing while the obstacle stays in range.  CAUTION uses a one-shot
+  /// pulse and leaves this null.
   Timer? _vibrationTimer;
+
+  /// Last verdict observed, used to fire speech (and the alert tone) only
+  /// when severity strictly increases.  De-escalation and return-to-safe
+  /// are silent — the user already knows the situation is improving.
+  EspVerdict _lastEspVerdict = EspVerdict.noData;
+
+  /// Pre-loaded player for the CRITICAL alert tone.  Preloading at init
+  /// avoids first-play latency at the moment the user most needs immediate
+  /// feedback.
+  final AudioPlayer _alertPlayer = AudioPlayer();
+  bool _alertReady = false;
 
   @override
   void initState() {
@@ -63,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     _initializeServices();
     _setupNavigationCallback();
+    _prepareAlertPlayer();
     // Pi BLE init — disabled
     // if (AppConstants.enablePiBle) {
     //   _initializeBle();
@@ -74,9 +84,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   void dispose() {
-    _espRepeatTimer?.cancel();
     _vibrationTimer?.cancel();
     Vibration.cancel(); // stop any ongoing vibration immediately
+    _alertPlayer.dispose();
     // _alertClearTimer?.cancel();       // Pi BLE — disabled
     // _alertAnimController.dispose();   // Pi BLE — disabled
     // if (AppConstants.enablePiBle) {   // Pi BLE — disabled
@@ -117,43 +127,49 @@ class _HomeScreenState extends State<HomeScreen>
     _espBleService.onVerdictChanged = (verdict) {
       if (!mounted) return;
 
-      // Cancel any existing repeat timer on every verdict transition.
-      _espRepeatTimer?.cancel();
-      _espRepeatTimer = null;
+      final previous = _lastEspVerdict;
+      _lastEspVerdict = verdict;
 
-      // Cancel any existing vibration loop on every verdict transition.
-      _vibrationTimer?.cancel();
-      _vibrationTimer = null;
+      // Any move away from CRITICAL stops the alert tone — the alarm has
+      // done its job, no need to keep blaring while the user steps back.
+      // (Re-escalation into CRITICAL restarts the tone from the top.)
+      if (verdict != EspVerdict.critical) {
+        _stopAlertTone();
+      }
 
-      // Path is clear — stop any ongoing warning speech and vibration.
+      // Path is clear — silence + stop buzzing.  No "all clear" message;
+      // absence of warning IS the all-clear signal, and announcing it
+      // would just add noise after every obstacle the user clears.
       if (verdict == EspVerdict.safe || verdict == EspVerdict.noData) {
-        _voiceService.stopSpeaking();
+        _vibrationTimer?.cancel();
+        _vibrationTimer = null;
         Vibration.cancel();
+        _voiceService.stopSpeaking();
         return;
       }
 
-      // Speak and vibrate immediately on entering a danger zone.
-      _voiceService.speak(verdict.speechText);
+      // Drive vibration first — the lifeline channel.  Always (re)set on
+      // verdict change so the pattern matches the *current* level (e.g.
+      // CRITICAL → WARNING relaxes the buzz without speaking).
       _vibrateForVerdict(verdict);
 
-      // Re-announce every 5 s while the obstacle stays in the same zone,
-      // using the live verdict so the message stays accurate if distance drifts.
-      _espRepeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!mounted) {
-          _espRepeatTimer?.cancel();
-          return;
+      // Escalation only: severity strictly increased since last reading.
+      // Combine the level word with the live distance so a single short
+      // utterance carries actionable info ("কাছে ১৫০ সেন্টিমিটার").
+      // De-escalation stays silent — the slower vibration already tells
+      // the user the situation improved.
+      if (verdict.severity > previous.severity) {
+        final speech = _escalationSpeech(verdict);
+        if (speech.isNotEmpty) {
+          _voiceService.speak(speech);
         }
-        final current = _espBleService.verdict;
-        if (current == EspVerdict.safe || current == EspVerdict.noData) {
-          _espRepeatTimer?.cancel();
-          _vibrationTimer?.cancel();
-          Vibration.cancel();
-          _voiceService.stopSpeaking();
-          return;
+        // Distinctive alarm tone — reserved for CRITICAL so the sound
+        // itself becomes the user's "stop right now" cue.  Used sparingly
+        // so it never becomes background noise.
+        if (verdict == EspVerdict.critical) {
+          _playAlertTone();
         }
-        _voiceService.speak(current.speechText);
-        _vibrateForVerdict(current);
-      });
+      }
     };
 
     _espBleService.addListener(() {
@@ -162,13 +178,16 @@ class _HomeScreenState extends State<HomeScreen>
       if (_espBleService.state == EspBleState.connected &&
           !_espConnectionAnnounced) {
         _espConnectionAnnounced = true;
-        _voiceService.speak(
-          'ESP32 সেন্সর সংযুক্ত। ESP32 sensor connected.',
-        );
+        _voiceService.speak('ESP32 সেন্সর সংযুক্ত। ESP32 sensor connected.');
       } else if (_espBleService.state == EspBleState.disconnected &&
           _espConnectionAnnounced) {
         _espConnectionAnnounced = false;
-        _espRepeatTimer?.cancel();
+        _vibrationTimer?.cancel();
+        _vibrationTimer = null;
+        Vibration.cancel();
+        _voiceService.stopSpeaking();
+        _stopAlertTone();
+        _lastEspVerdict = EspVerdict.noData;
         _voiceService.speak(
           'ESP32 সেন্সর বিচ্ছিন্ন। ESP32 sensor disconnected.',
         );
@@ -211,53 +230,122 @@ class _HomeScreenState extends State<HomeScreen>
   //   }
   // }
 
-  /// Trigger phone vibration based on the current ESP32 distance verdict.
+  /// Bangla-digit conversion (০-৯) so spoken distances pronounce correctly
+  /// in Bangla TTS — ASCII digits often get read in English even inside an
+  /// otherwise-Bangla utterance.
+  String _bnDigits(int n) {
+    const bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
+    return n.toString().split('').map((d) => bn[int.parse(d)]).join();
+  }
+
+  /// Build the escalation utterance: level word + live distance rounded to
+  /// 10 cm.  Rounding stabilises the announcement near threshold boundaries
+  /// (47 cm and 53 cm both say "৫০") and keeps the spoken number short.
+  String _escalationSpeech(EspVerdict v) {
+    final base = v.speechText;
+    if (base.isEmpty) return '';
+    final d = _espBleService.latestDistance;
+    if (d == null || d <= 0) return base;
+    final rounded = (d / 10).round() * 10;
+    return '$base ${_bnDigits(rounded)} সেন্টিমিটার';
+  }
+
+  /// Trigger phone vibration matching the current ESP32 distance verdict.
   ///
-  /// Uses the `vibration` package which relies on the VIBRATE permission
-  /// (already declared in AndroidManifest.xml — a normal permission that is
-  /// granted automatically at install time, no runtime prompt needed).
-  ///
-  /// For CRITICAL verdicts a repeating vibration timer fires rapid bursts
-  /// every 800 ms so the phone buzzes continuously until the obstacle clears.
-  /// WARNING uses a slower repeat (every 1.5 s) and CAUTION is a one-shot.
+  /// CAUTION  — single light pulse ("heads up"), no loop.
+  /// WARNING  — medium double pulse + a 1.5 s repeat — clear but not panicky.
+  /// CRITICAL — aggressive 5-pulse opening burst then a ~90 % duty cycle
+  ///            loop (450 ms vibrate every 500 ms).  Effectively continuous;
+  ///            paired with the alert tone, this is the user's "stop now"
+  ///            signal even if the phone is buried in a bag.
   void _vibrateForVerdict(EspVerdict verdict) async {
-    // Safety check — skip gracefully if no vibrator hardware.
     final hasVibrator = await Vibration.hasVibrator();
     if (hasVibrator != true) return;
 
-    // Stop any prior vibration loop before starting a new one.
+    // Clear any prior loop / pattern before starting the new one.
     _vibrationTimer?.cancel();
     _vibrationTimer = null;
     Vibration.cancel();
 
     switch (verdict) {
       case EspVerdict.critical:
-        // Aggressive rapid pulses: vibrate 400 ms, pause 150 ms, repeat.
-        Vibration.vibrate(pattern: [0, 400, 150, 400, 150, 400]);
-        // Keep pulsing every 800 ms so the phone never stops buzzing.
+        // Near-continuous opening burst: five 600 ms pulses separated by
+        // only 80 ms gaps — feels like one long shake with texture.
+        Vibration.vibrate(
+          pattern: [0, 600, 80, 600, 80, 600, 80, 600, 80, 600],
+        );
+        // Sustained ~90 % duty cycle loop: 450 ms vibrate every 500 ms.
+        // Impossible to ignore even through a backpack.
         _vibrationTimer = Timer.periodic(
-          const Duration(milliseconds: 800),
-          (_) => Vibration.vibrate(duration: 400),
+          const Duration(milliseconds: 500),
+          (_) => Vibration.vibrate(duration: 450),
         );
         break;
       case EspVerdict.warning:
-        // Medium pulses: vibrate 250 ms, pause 120 ms, vibrate 250 ms.
+        // Medium double pulse, then a 1.5 s repeat.
         Vibration.vibrate(pattern: [0, 250, 120, 250]);
-        // Repeat every 1.5 s to remind the user.
         _vibrationTimer = Timer.periodic(
           const Duration(milliseconds: 1500),
           (_) => Vibration.vibrate(duration: 250),
         );
         break;
       case EspVerdict.caution:
-        // Single light pulse — no repeating timer.
-        Vibration.vibrate(duration: 150);
+        // Triple light tap — distinctive 'tic-tic-tic' rhythm so the user
+        // can tell CAUTION apart from WARNING's heavier double-pulse and
+        // CRITICAL's continuous shake by feel alone.  Loop every 2.5 s as
+        // a gentle background reminder for distant obstacles — frequent
+        // enough to keep awareness, sparse enough not to nag.
+        const cautionPattern = [0, 80, 80, 80, 80, 80];
+        Vibration.vibrate(pattern: cautionPattern);
+        _vibrationTimer = Timer.periodic(
+          const Duration(milliseconds: 2500),
+          (_) => Vibration.vibrate(pattern: cautionPattern),
+        );
         break;
       case EspVerdict.safe:
       case EspVerdict.noData:
-        // Should not reach here (caller guards), but cancel just in case.
+        // Caller guards, but cancel for safety.
         Vibration.cancel();
         break;
+    }
+  }
+
+  /// Preload assets/alerts/alert.wav so the first play-on-CRITICAL has no
+  /// startup lag — the moment the user most needs immediate feedback.
+  /// Failures degrade gracefully: vibration + speech still fire.
+  Future<void> _prepareAlertPlayer() async {
+    try {
+      await _alertPlayer.setReleaseMode(ReleaseMode.stop);
+      await _alertPlayer.setSource(AssetSource('alerts/alert.wav'));
+      _alertReady = true;
+    } catch (e) {
+      debugPrint('>> Alert player prep failed: $e');
+    }
+  }
+
+  /// Play the CRITICAL alert tone from the start.  Stops any in-flight
+  /// playback first so re-entering CRITICAL within the tone's duration
+  /// restarts cleanly instead of overlapping.
+  Future<void> _playAlertTone() async {
+    if (!_alertReady) return;
+    try {
+      await _alertPlayer.stop();
+      await _alertPlayer.seek(Duration.zero);
+      await _alertPlayer.resume();
+    } catch (e) {
+      debugPrint('>> Alert play failed: $e');
+    }
+  }
+
+  /// Stop the CRITICAL alert tone immediately.  Called on any transition
+  /// away from CRITICAL — de-escalation, path clear, or sensor disconnect —
+  /// so the long WAV does not keep blaring after the user has cleared the
+  /// danger zone.  Fire-and-forget; errors are logged but do not bubble.
+  Future<void> _stopAlertTone() async {
+    try {
+      await _alertPlayer.stop();
+    } catch (e) {
+      debugPrint('>> Alert stop failed: $e');
     }
   }
 
@@ -480,8 +568,8 @@ class _HomeScreenState extends State<HomeScreen>
           color: connected
               ? color
               : btOff
-                  ? AppColors.error.withValues(alpha: 0.5)
-                  : AppColors.primary.withValues(alpha: 0.3),
+              ? AppColors.error.withValues(alpha: 0.5)
+              : AppColors.primary.withValues(alpha: 0.3),
           width: 2,
         ),
       ),
@@ -497,17 +585,17 @@ class _HomeScreenState extends State<HomeScreen>
                   connected
                       ? Icons.sensors
                       : btOff
-                          ? Icons.bluetooth_disabled
-                          : scanning
-                              ? Icons.bluetooth_searching
-                              : Icons.sensors_off,
+                      ? Icons.bluetooth_disabled
+                      : scanning
+                      ? Icons.bluetooth_searching
+                      : Icons.sensors_off,
                   color: connected
                       ? color
                       : btOff
-                          ? AppColors.error
-                          : scanning
-                              ? AppColors.info
-                              : AppColors.warning,
+                      ? AppColors.error
+                      : scanning
+                      ? AppColors.info
+                      : AppColors.warning,
                   size: 28,
                 ),
                 SizedBox(width: AppConstants.spacingM),
@@ -524,10 +612,8 @@ class _HomeScreenState extends State<HomeScreen>
                       Text(
                         _espBleService.statusMessage,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: connected
-                                  ? color
-                                  : AppColors.textSecondary,
-                            ),
+                          color: connected ? color : AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -563,9 +649,7 @@ class _HomeScreenState extends State<HomeScreen>
                       children: [
                         Text(
                           d == null ? '— cm' : '${d.toStringAsFixed(1)} cm',
-                          style: Theme.of(context)
-                              .textTheme
-                              .displaySmall
+                          style: Theme.of(context).textTheme.displaySmall
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
                                 color: color,
@@ -609,8 +693,9 @@ class _HomeScreenState extends State<HomeScreen>
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: BorderSide(color: AppColors.primary),
-                    padding:
-                        EdgeInsets.symmetric(vertical: AppConstants.spacingM),
+                    padding: EdgeInsets.symmetric(
+                      vertical: AppConstants.spacingM,
+                    ),
                   ),
                 ),
               ),
@@ -770,8 +855,8 @@ class _HomeScreenState extends State<HomeScreen>
               Text(
                 AppConstants.appNameEn,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                    ),
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
               ),
             ],
           ),
@@ -786,7 +871,9 @@ class _HomeScreenState extends State<HomeScreen>
             return Stack(
               children: [
                 SingleChildScrollView(
-                  padding: EdgeInsets.all(AppConstants.spacingL).copyWith(bottom: 160), // Add padding to bottom so it's not hidden by wave
+                  padding: EdgeInsets.all(AppConstants.spacingL).copyWith(
+                    bottom: 160,
+                  ), // Add padding to bottom so it's not hidden by wave
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -810,18 +897,16 @@ class _HomeScreenState extends State<HomeScreen>
                                 _voiceService.isProcessing
                                     ? 'চিন্তা করছি...'
                                     : _voiceService.isListening
-                                        ? 'শুনছি...'
-                                        : 'ভয়েস কমান্ড',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .headlineSmall
+                                    ? 'শুনছি...'
+                                    : 'ভয়েস কমান্ড',
+                                style: Theme.of(context).textTheme.headlineSmall
                                     ?.copyWith(
                                       fontWeight: FontWeight.bold,
                                       color: _voiceService.isListening
                                           ? AppColors.accent
                                           : _voiceService.isProcessing
-                                              ? AppColors.info
-                                              : AppColors.primary,
+                                          ? AppColors.info
+                                          : AppColors.primary,
                                     ),
                               ),
                               SizedBox(height: AppConstants.spacingXs),
@@ -829,36 +914,37 @@ class _HomeScreenState extends State<HomeScreen>
                                 _voiceService.isProcessing
                                     ? 'Processing...'
                                     : _voiceService.isListening
-                                        ? 'Listening...'
-                                        : 'Voice Command',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
+                                    ? 'Listening...'
+                                    : 'Voice Command',
+                                style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: AppColors.textSecondary),
                               ),
                               SizedBox(height: AppConstants.spacingM),
                               Text(
                                 'কথা বলতে ভলিউম বোতাম চেপে ধরে রাখুন।\nPress and hold the Volume buttons to speak.',
                                 textAlign: TextAlign.center,
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: AppColors.textSecondary,
-                                    ),
+                                style: Theme.of(context).textTheme.bodyMedium
+                                    ?.copyWith(color: AppColors.textSecondary),
                               ),
-                              if (_voiceService.currentTranscript.isNotEmpty) ...[
+                              if (_voiceService
+                                  .currentTranscript
+                                  .isNotEmpty) ...[
                                 SizedBox(height: AppConstants.spacingM),
                                 Container(
-                                  padding: EdgeInsets.all(AppConstants.spacingM),
+                                  padding: EdgeInsets.all(
+                                    AppConstants.spacingM,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primaryLight
-                                        .withValues(alpha: 0.2),
+                                    color: AppColors.primaryLight.withValues(
+                                      alpha: 0.2,
+                                    ),
                                     borderRadius: BorderRadius.circular(
-                                        AppConstants.radiusM),
+                                      AppConstants.radiusM,
+                                    ),
                                   ),
                                   child: Text(
                                     '"${_voiceService.currentTranscript}"',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge
+                                    style: Theme.of(context).textTheme.bodyLarge
                                         ?.copyWith(fontStyle: FontStyle.italic),
                                     textAlign: TextAlign.center,
                                   ),
@@ -869,27 +955,35 @@ class _HomeScreenState extends State<HomeScreen>
                                   !_voiceService.isProcessing) ...[
                                 SizedBox(height: AppConstants.spacingM),
                                 Container(
-                                  padding: EdgeInsets.all(AppConstants.spacingM),
+                                  padding: EdgeInsets.all(
+                                    AppConstants.spacingM,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.success.withValues(alpha: 0.1),
+                                    color: AppColors.success.withValues(
+                                      alpha: 0.1,
+                                    ),
                                     borderRadius: BorderRadius.circular(
-                                        AppConstants.radiusM),
+                                      AppConstants.radiusM,
+                                    ),
                                     border: Border.all(
-                                      color:
-                                          AppColors.success.withValues(alpha: 0.3),
+                                      color: AppColors.success.withValues(
+                                        alpha: 0.3,
+                                      ),
                                     ),
                                   ),
                                   child: Row(
                                     children: [
-                                      Icon(Icons.check_circle,
-                                          color: AppColors.success),
+                                      Icon(
+                                        Icons.check_circle,
+                                        color: AppColors.success,
+                                      ),
                                       SizedBox(width: AppConstants.spacingS),
                                       Expanded(
                                         child: Text(
                                           _voiceService.lastResponse,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .bodyMedium,
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.bodyMedium,
                                         ),
                                       ),
                                     ],
@@ -912,131 +1006,132 @@ class _HomeScreenState extends State<HomeScreen>
                       SizedBox(height: AppConstants.spacingL),
 
                       // ── ESP32 distance card ───────────────────────────────────
-                  if (AppConstants.enableEspBle) ...[
-                    _buildEspCard(),
-                    SizedBox(height: AppConstants.spacingL),
-                  ],
+                      if (AppConstants.enableEspBle) ...[
+                        _buildEspCard(),
+                        SizedBox(height: AppConstants.spacingL),
+                      ],
 
-                  // ── BLE + alert card (Pi) — disabled ──────────────────────
-                  // if (AppConstants.enablePiBle) _buildBleCard(),
+                      // ── BLE + alert card (Pi) — disabled ──────────────────────
+                      // if (AppConstants.enablePiBle) _buildBleCard(),
+                      SizedBox(height: AppConstants.spacingXl),
 
-                  SizedBox(height: AppConstants.spacingXl),
-
-                  // ── Test command ──────────────────────────────────────────
-                  Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(AppConstants.spacingM),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'টেস্ট কমান্ড / Test Command',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          SizedBox(height: AppConstants.spacingS),
-                          TextField(
-                            decoration: InputDecoration(
-                              hintText: 'Type a command...',
-                              suffixIcon: IconButton(
-                                icon: const Icon(Icons.send),
-                                onPressed: () {},
+                      // ── Test command ──────────────────────────────────────────
+                      Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(AppConstants.spacingM),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'টেস্ট কমান্ড / Test Command',
+                                style: Theme.of(context).textTheme.titleSmall,
                               ),
+                              SizedBox(height: AppConstants.spacingS),
+                              TextField(
+                                decoration: InputDecoration(
+                                  hintText: 'Type a command...',
+                                  suffixIcon: IconButton(
+                                    icon: const Icon(Icons.send),
+                                    onPressed: () {},
+                                  ),
+                                ),
+                                onSubmitted: (text) {
+                                  if (text.isNotEmpty) {
+                                    _voiceService.sendTextCommand(text);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      SizedBox(height: AppConstants.spacingXl),
+
+                      // ── Navigation grid ───────────────────────────────────────
+                      Semantics(
+                        header: true,
+                        label: 'নেভিগেশন অপশন। Navigation options.',
+                        child: Text(
+                          'কোথায় যেতে চান? / Where to go?',
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                      SizedBox(height: AppConstants.spacingL),
+
+                      GridView.count(
+                        crossAxisCount: 2,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: AppConstants.spacingL,
+                        crossAxisSpacing: AppConstants.spacingL,
+                        childAspectRatio: 0.9,
+                        children: [
+                          AccessibleActionButton(
+                            icon: Icons.location_on,
+                            label: 'আমি কোথায়?',
+                            labelEn: 'Where am I?',
+                            semanticHint: 'আপনার বর্তমান অবস্থান দেখুন।',
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.location,
                             ),
-                            onSubmitted: (text) {
-                              if (text.isNotEmpty) {
-                                _voiceService.sendTextCommand(text);
-                              }
+                            color: AppColors.info,
+                          ),
+                          AccessibleActionButton(
+                            icon: Icons.settings,
+                            label: 'সেটিংস',
+                            labelEn: 'Settings',
+                            semanticHint: 'সেটিংস খুলুন।',
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.settings,
+                            ),
+                            color: AppColors.primary,
+                          ),
+                          AccessibleActionButton(
+                            icon: Icons.help_outline,
+                            label: 'সাহায্য',
+                            labelEn: 'Help',
+                            semanticHint: 'সাহায্য এবং টিউটোরিয়াল।',
+                            onPressed: () =>
+                                Navigator.pushNamed(context, AppRoutes.help),
+                            color: AppColors.success,
+                          ),
+                          AccessibleActionButton(
+                            icon: Icons.battery_charging_full,
+                            label: 'ব্যাটারি',
+                            labelEn: 'Battery',
+                            semanticHint: 'ব্যাটারি স্ট্যাটাস।',
+                            onPressed: () {
+                              _voiceService.speak(
+                                'ব্যাটারি ৮৫ শতাংশ। Battery is 85 percent.',
+                              );
                             },
+                            color: AppColors.warning,
                           ),
                         ],
                       ),
-                    ),
-                  ),
-
-                  SizedBox(height: AppConstants.spacingXl),
-
-                  // ── Navigation grid ───────────────────────────────────────
-                  Semantics(
-                    header: true,
-                    label: 'নেভিগেশন অপশন। Navigation options.',
-                    child: Text(
-                      'কোথায় যেতে চান? / Where to go?',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-
-                  SizedBox(height: AppConstants.spacingL),
-
-                  GridView.count(
-                    crossAxisCount: 2,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: AppConstants.spacingL,
-                    crossAxisSpacing: AppConstants.spacingL,
-                    childAspectRatio: 0.9,
-                    children: [
-                      AccessibleActionButton(
-                        icon: Icons.location_on,
-                        label: 'আমি কোথায়?',
-                        labelEn: 'Where am I?',
-                        semanticHint: 'আপনার বর্তমান অবস্থান দেখুন।',
-                        onPressed: () =>
-                            Navigator.pushNamed(context, AppRoutes.location),
-                        color: AppColors.info,
-                      ),
-                      AccessibleActionButton(
-                        icon: Icons.settings,
-                        label: 'সেটিংস',
-                        labelEn: 'Settings',
-                        semanticHint: 'সেটিংস খুলুন।',
-                        onPressed: () =>
-                            Navigator.pushNamed(context, AppRoutes.settings),
-                        color: AppColors.primary,
-                      ),
-                      AccessibleActionButton(
-                        icon: Icons.help_outline,
-                        label: 'সাহায্য',
-                        labelEn: 'Help',
-                        semanticHint: 'সাহায্য এবং টিউটোরিয়াল।',
-                        onPressed: () =>
-                            Navigator.pushNamed(context, AppRoutes.help),
-                        color: AppColors.success,
-                      ),
-                      AccessibleActionButton(
-                        icon: Icons.battery_charging_full,
-                        label: 'ব্যাটারি',
-                        labelEn: 'Battery',
-                        semanticHint: 'ব্যাটারি স্ট্যাটাস।',
-                        onPressed: () {
-                          _voiceService.speak(
-                            'ব্যাটারি ৮৫ শতাংশ। Battery is 85 percent.',
-                          );
-                        },
-                        color: AppColors.warning,
-                      ),
                     ],
                   ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: IgnorePointer(
-                child: ColorfulWaveform(
-                  isListening: _voiceService.isListening,
                 ),
-              ),
-            ),
-          ],
-        );
-      },
-    ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: IgnorePointer(
+                    child: ColorfulWaveform(
+                      isListening: _voiceService.isListening,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
