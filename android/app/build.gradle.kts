@@ -47,8 +47,14 @@ android {
 }
 
 dependencies {
-    // LiteRT-LM on-device LLM inference (Gemma 4 E2B)
-    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
+    // LiteRT-LM on-device LLM inference (Gemma 4 E2B) — DISABLED.
+    // Its AAR bundles libLiteRt.so, which collides with the LiteRT runtime
+    // shipped by the ultralytics_yolo vision plugin (mergeDebugNativeLibs:
+    // "2 files found with path 'lib/arm64-v8a/libLiteRt.so'").  The LLM is
+    // feature-flagged off and its model asset is not bundled, so this is
+    // dead weight until re-enabled.  See MainActivity.kt for the matching
+    // stubbed channel and re-enable notes.
+    // implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 }
 
 flutter {

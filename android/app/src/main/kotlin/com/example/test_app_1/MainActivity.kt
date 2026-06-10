@@ -2,42 +2,31 @@ package com.example.test_app_1
 
 import android.content.Context
 import android.media.AudioManager
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
-import com.google.ai.edge.litertlm.Backend
-import com.google.ai.edge.litertlm.Content
-import com.google.ai.edge.litertlm.Contents
-import com.google.ai.edge.litertlm.ConversationConfig
-import com.google.ai.edge.litertlm.Engine
-import com.google.ai.edge.litertlm.EngineConfig
+// LiteRT-LM (on-device Gemma LLM) is disabled: its AAR bundles libLiteRt.so,
+// which collides with the LiteRT runtime shipped by the ultralytics_yolo
+// vision plugin at the mergeDebugNativeLibs step.  The LLM is feature-flagged
+// off (AppConstants.enableLlm = false) and its 2.58 GB model asset is not
+// bundled, so nothing functional is lost.  To re-enable: restore these
+// imports, the engine code below, and the litertlm-android dependency in
+// app/build.gradle.kts — then resolve the duplicate-.so conflict (align the
+// LiteRT versions or scope a packaging pickFirst to the matching runtime).
+// import com.google.ai.edge.litertlm.Backend
+// import com.google.ai.edge.litertlm.Content
+// import com.google.ai.edge.litertlm.Contents
+// import com.google.ai.edge.litertlm.ConversationConfig
+// import com.google.ai.edge.litertlm.Engine
+// import com.google.ai.edge.litertlm.EngineConfig
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-import java.io.File
-import java.io.FileOutputStream
 
 class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "com.example.test_app_1/llm"
         private const val KEYS_CHANNEL = "com.example.test_app_1/hardware_keys"
-
-        // Path inside the APK's asset folder where Flutter bundles assets.
-        private const val MODEL_ASSET_PATH =
-            "flutter_assets/assets/models/gemma-4-E2B-it.litertlm"
-
-        // Filename used when the model is stored on-device.
-        private const val MODEL_FILENAME = "gemma-4-E2B-it.litertlm"
     }
-
-    private val mainHandler = Handler(Looper.getMainLooper())
-
-    // Engine is long-lived (holds model weights in memory).
-    // Conversation is recreated per command — keeps context clean for
-    // stateless intent classification.
-    private var engine: Engine? = null
-    private var systemInstruction: String = ""
 
     // Channel used to forward consumed hardware-key events (volume up) to Dart.
     private var keysChannel: MethodChannel? = null
@@ -55,113 +44,24 @@ class MainActivity : FlutterActivity() {
             KEYS_CHANNEL,
         )
 
+        // LLM channel stub — LiteRT-LM is disabled (see imports note above).
+        // Keeps the channel alive so the Dart side gets a clean, identifiable
+        // error instead of MissingPluginException if it ever calls in while
+        // the feature flag is off.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-
-                    // ── initialize ────────────────────────────────────────
-                    // Called once from SplashScreen.
-                    // Copies the model to filesDir on first launch (skips on
-                    // subsequent launches), then loads it into the Engine.
-                    "initialize" -> {
-                        systemInstruction =
-                            call.argument<String>("systemInstruction") ?: ""
-                        Thread {
-                            try {
-                                val modelPath = ensureModelFile()
-                                val cfg = EngineConfig(
-                                    modelPath = modelPath,
-                                    // Prefer GPU; LiteRT-LM auto-falls back to
-                                    // CPU on devices that don't support it.
-                                    backend = Backend.GPU(),
-                                )
-                                engine?.close()
-                                engine = Engine(cfg).also { it.initialize() }
-                                mainHandler.post { result.success(null) }
-                            } catch (e: Exception) {
-                                mainHandler.post {
-                                    result.error("INIT_ERROR", e.message, null)
-                                }
-                            }
-                        }.start()
-                    }
-
-                    // ── processCommand ────────────────────────────────────
-                    // Receives the user's transcribed text.  Creates a fresh
-                    // Conversation (so history never accumulates), injects the
-                    // system instruction, runs blocking inference, returns the
-                    // raw model output string.
-                    "processCommand" -> {
-                        val text = call.argument<String>("text") ?: ""
-                        val eng = engine
-                        if (eng == null) {
-                            result.error(
-                                "NOT_INITIALIZED",
-                                "LLM engine not initialized",
-                                null,
-                            )
-                            return@setMethodCallHandler
-                        }
-                        Thread {
-                            try {
-                                val convConfig = ConversationConfig(
-                                    systemInstruction = Contents.of(systemInstruction),
-                                )
-                                val message = eng.createConversation(convConfig).use { conv ->
-                                    conv.sendMessage(Contents.of(Content.Text(text)))
-                                }
-                                // Contents.toString() joins all text parts into one string.
-                                val response = message?.contents?.toString() ?: ""
-                                mainHandler.post { result.success(response) }
-                            } catch (e: Exception) {
-                                mainHandler.post {
-                                    result.error(
-                                        "INFERENCE_ERROR",
-                                        e.message,
-                                        null,
-                                    )
-                                }
-                            }
-                        }.start()
-                    }
-
-                    // ── dispose ───────────────────────────────────────────
-                    "dispose" -> {
-                        engine?.close()
-                        engine = null
-                        result.success(null)
-                    }
-
+                    "initialize", "processCommand" -> result.error(
+                        "LLM_DISABLED",
+                        "On-device LLM is disabled in this build " +
+                            "(LiteRT-LM removed to avoid native-lib conflict " +
+                            "with the vision plugin).",
+                        null,
+                    )
+                    "dispose" -> result.success(null)
                     else -> result.notImplemented()
                 }
             }
-    }
-
-    // ── helpers ───────────────────────────────────────────────────────────────
-
-    /**
-     * Ensures the .litertlm model file is present in [filesDir].
-     *
-     * On first launch this copies ~2.58 GB from the APK asset stream —
-     * subsequent launches find the file already there and return immediately.
-     *
-     * Returns the absolute path of the on-device model file.
-     */
-    private fun ensureModelFile(): String {
-        val dest = File(filesDir, MODEL_FILENAME)
-        if (dest.exists() && dest.length() > 1_000_000L) {
-            // File already extracted — skip copy.
-            return dest.absolutePath
-        }
-
-        // Copy from APK assets to writable storage.
-        // Use a 4 MB buffer to keep memory pressure low during the large copy.
-        assets.open(MODEL_ASSET_PATH).use { input ->
-            FileOutputStream(dest).use { output ->
-                input.copyTo(output, bufferSize = 4 * 1024 * 1024)
-            }
-        }
-        return dest.absolutePath
     }
 
     // ── hardware-key interception ─────────────────────────────────────────────

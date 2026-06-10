@@ -147,8 +147,11 @@ class SpeechService {
 
         // Locale pack missing — retry this session over the online recognizer.
         if ((error.errorMsg == 'error_language_unavailable' ||
-            error.errorMsg == 'error_language_not_supported') && _useOnDevice) {
-          debugPrint('AndroidSTT: on-device pack unavailable, retrying online.');
+                error.errorMsg == 'error_language_not_supported') &&
+            _useOnDevice) {
+          debugPrint(
+            'AndroidSTT: on-device pack unavailable, retrying online.',
+          );
           _useOnDevice = false;
           _languageUnavailableRetry = true;
           _completeAndroidStt();
@@ -169,9 +172,7 @@ class SpeechService {
         }
 
         // Anything else is a real error — bubble up.
-        onError?.call(
-          'ভয়েস রিকগনিশন ত্রুটি / STT error: ${error.errorMsg}',
-        );
+        onError?.call('ভয়েস রিকগনিশন ত্রুটি / STT error: ${error.errorMsg}');
         _isListening = false;
         _completeAndroidStt();
       },
@@ -203,7 +204,9 @@ class SpeechService {
       for (final locale in locales) {
         if (locale.localeId.startsWith('bn')) {
           _resolvedBengaliLocale = locale.localeId;
-          debugPrint('SpeechService: Found Bengali locale -> ${locale.localeId}');
+          debugPrint(
+            'SpeechService: Found Bengali locale -> ${locale.localeId}',
+          );
           break; // Prefer the first one found (e.g., bn_BD, bn_IN)
         }
       }

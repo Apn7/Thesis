@@ -63,5 +63,6 @@ class AppConstants {
   // Feature flags — flip to detach/reattach without removing code
   static const bool enablePiBle = false;
   static const bool enableEspBle = true;
-  static const bool enableLlm = true;  // routes voice commands through GroqService (cloud LLaMA)
+  static const bool enableLlm =
+      true; // routes voice commands through GroqService (cloud LLaMA)
 }

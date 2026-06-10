@@ -130,10 +130,8 @@ class IntentMatch {
     required this.codeMixingIndex,
   });
 
-  VoiceCommandResponse toVoiceCommandResponse() => VoiceCommandResponse(
-        action: action,
-        spokenResponse: spokenResponse,
-      );
+  VoiceCommandResponse toVoiceCommandResponse() =>
+      VoiceCommandResponse(action: action, spokenResponse: spokenResponse);
 }
 
 /// Per-phrase sub-scores for one candidate.  Surfaces in [MatchDiagnostics].
@@ -162,16 +160,16 @@ class CandidateScores {
   });
 
   Map<String, dynamic> toJson() => {
-        'action': action,
-        'phrase': phrase,
-        'damerau_levenshtein': damerauLevenshtein,
-        'jaro_winkler': jaroWinkler,
-        'sorensen_dice': sorensenDice,
-        'tfidf_cosine': tfIdfCosine,
-        'jaccard': jaccard,
-        'containment_boost': containmentBoost,
-        'ensemble_score': ensembleScore,
-      };
+    'action': action,
+    'phrase': phrase,
+    'damerau_levenshtein': damerauLevenshtein,
+    'jaro_winkler': jaroWinkler,
+    'sorensen_dice': sorensenDice,
+    'tfidf_cosine': tfIdfCosine,
+    'jaccard': jaccard,
+    'containment_boost': containmentBoost,
+    'ensemble_score': ensembleScore,
+  };
 }
 
 /// Snapshot of the most recent classification — exposed for evaluation
@@ -201,16 +199,16 @@ class MatchDiagnostics {
   });
 
   Map<String, dynamic> toJson() => {
-        'raw_input': rawInput,
-        'normalised_input': normalisedInput,
-        'tokens': tokens,
-        'tokens_after_stopwords': tokensAfterStopwords,
-        'code_mixing_index': codeMixingIndex,
-        'top_score': topScore,
-        'accepted_locally': acceptedLocally,
-        'latency_micros': latencyMicros,
-        'top_candidates': topCandidates.map((c) => c.toJson()).toList(),
-      };
+    'raw_input': rawInput,
+    'normalised_input': normalisedInput,
+    'tokens': tokens,
+    'tokens_after_stopwords': tokensAfterStopwords,
+    'code_mixing_index': codeMixingIndex,
+    'top_score': topScore,
+    'accepted_locally': acceptedLocally,
+    'latency_micros': latencyMicros,
+    'top_candidates': topCandidates.map((c) => c.toJson()).toList(),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -259,7 +257,7 @@ class IntentMatcher {
                   cfg.wSorensenDice +
                   cfg.wTfIdfCosine +
                   cfg.wJaccard -
-              1.0)
+                  1.0)
               .abs() <
           1e-6,
       'IntentMatcher weights must sum to 1.0',
@@ -274,21 +272,103 @@ class IntentMatcher {
   // "to", "এর", "এ" from inflating Jaccard / TF-IDF scores.
 
   static const Set<String> _stopwordsEn = {
-    'a', 'an', 'the', 'is', 'are', 'am', 'be', 'been', 'being', 'do', 'does',
-    'did', 'to', 'of', 'in', 'on', 'at', 'for', 'with', 'and', 'or', 'but',
-    'i', 'me', 'my', 'we', 'us', 'our', 'you', 'your', 'this', 'that', 'these',
-    'those', 'please', 'now', 'just', 'can', 'could', 'would', 'will', 'shall',
-    'tell', 'show', 'open', 'go', 'it', 'so',
+    'a',
+    'an',
+    'the',
+    'is',
+    'are',
+    'am',
+    'be',
+    'been',
+    'being',
+    'do',
+    'does',
+    'did',
+    'to',
+    'of',
+    'in',
+    'on',
+    'at',
+    'for',
+    'with',
+    'and',
+    'or',
+    'but',
+    'i',
+    'me',
+    'my',
+    'we',
+    'us',
+    'our',
+    'you',
+    'your',
+    'this',
+    'that',
+    'these',
+    'those',
+    'please',
+    'now',
+    'just',
+    'can',
+    'could',
+    'would',
+    'will',
+    'shall',
+    'tell',
+    'show',
+    'open',
+    'go',
+    'it',
+    'so',
   };
 
   /// A small but high-frequency Bengali stopword list (postpositions,
   /// pronouns, copula).  Curated from common Bangla NLP resources.
   static const Set<String> _stopwordsBn = {
-    'এ', 'ও', 'এই', 'সেই', 'একটি', 'একটা', 'যে', 'যা', 'যার', 'কি',
-    'কী', 'কে', 'কেউ', 'কোন', 'কোনো', 'এখন', 'তখন', 'আমি', 'আমার',
-    'তুমি', 'তোমার', 'আপনি', 'আপনার', 'সে', 'তার', 'করে', 'করো',
-    'করছে', 'করছি', 'হবে', 'হয়', 'হচ্ছে', 'আছে', 'আছি', 'ছিল',
-    'এর', 'একটু', 'অনেক', 'বেশি', 'কম', 'খুব', 'যাও', 'দাও', 'বলো',
+    'এ',
+    'ও',
+    'এই',
+    'সেই',
+    'একটি',
+    'একটা',
+    'যে',
+    'যা',
+    'যার',
+    'কি',
+    'কী',
+    'কে',
+    'কেউ',
+    'কোন',
+    'কোনো',
+    'এখন',
+    'তখন',
+    'আমি',
+    'আমার',
+    'তুমি',
+    'তোমার',
+    'আপনি',
+    'আপনার',
+    'সে',
+    'তার',
+    'করে',
+    'করো',
+    'করছে',
+    'করছি',
+    'হবে',
+    'হয়',
+    'হচ্ছে',
+    'আছে',
+    'আছি',
+    'ছিল',
+    'এর',
+    'একটু',
+    'অনেক',
+    'বেশি',
+    'কম',
+    'খুব',
+    'যাও',
+    'দাও',
+    'বলো',
   };
 
   // ── State ───────────────────────────────────────────────────────────
@@ -328,19 +408,23 @@ class IntentMatcher {
         final phrases = (m['phrases'] as List).cast<String>();
         final responses = m['responses'] as Map<String, dynamic>;
         final normPhrases = phrases.map(_normalize).toList();
-        final tokenLists =
-            normPhrases.map(_tokenize).map(_filterStopwords).toList();
+        final tokenLists = normPhrases
+            .map(_tokenize)
+            .map(_filterStopwords)
+            .toList();
         for (final t in tokenLists) {
           allPhraseTokenSets.add(t.toSet());
         }
-        perIntent.add(_IntentRaw(
-          action: action,
-          rawPhrases: phrases,
-          normPhrases: normPhrases,
-          tokenLists: tokenLists,
-          responseBn: responses['bn'] as String? ?? '',
-          responseEn: responses['en'] as String? ?? '',
-        ));
+        perIntent.add(
+          _IntentRaw(
+            action: action,
+            rawPhrases: phrases,
+            normPhrases: normPhrases,
+            tokenLists: tokenLists,
+            responseBn: responses['bn'] as String? ?? '',
+            responseEn: responses['en'] as String? ?? '',
+          ),
+        );
       }
 
       // IDF over the phrase corpus: idf(t) = ln((N + 1) / (df(t) + 1)) + 1
@@ -366,16 +450,18 @@ class IntentMatcher {
           tfIdfs.add(_tfIdfVector(raw.tokenLists[i]));
           bigrams.add(_charBigrams(raw.normPhrases[i]));
         }
-        _intents.add(_IntentDef(
-          action: raw.action,
-          rawPhrases: raw.rawPhrases,
-          normPhrases: raw.normPhrases,
-          phraseTokens: raw.tokenLists,
-          phraseTfIdf: tfIdfs,
-          phraseBigrams: bigrams,
-          responseBn: raw.responseBn,
-          responseEn: raw.responseEn,
-        ));
+        _intents.add(
+          _IntentDef(
+            action: raw.action,
+            rawPhrases: raw.rawPhrases,
+            normPhrases: raw.normPhrases,
+            phraseTokens: raw.tokenLists,
+            phraseTfIdf: tfIdfs,
+            phraseBigrams: bigrams,
+            responseBn: raw.responseBn,
+            responseEn: raw.responseEn,
+          ),
+        );
       }
 
       _loaded = true;
@@ -426,17 +512,19 @@ class IntentMatcher {
 
         final ensemble = _ensemble(dl, jw, dc, tf, jc, boost);
 
-        allCandidates.add(CandidateScores(
-          action: intent.action,
-          phrase: intent.rawPhrases[i],
-          damerauLevenshtein: dl,
-          jaroWinkler: jw,
-          sorensenDice: dc,
-          tfIdfCosine: tf,
-          jaccard: jc,
-          containmentBoost: boost,
-          ensembleScore: ensemble,
-        ));
+        allCandidates.add(
+          CandidateScores(
+            action: intent.action,
+            phrase: intent.rawPhrases[i],
+            damerauLevenshtein: dl,
+            jaroWinkler: jw,
+            sorensenDice: dc,
+            tfIdfCosine: tf,
+            jaccard: jc,
+            containmentBoost: boost,
+            ensembleScore: ensemble,
+          ),
+        );
       }
     }
 
@@ -460,8 +548,7 @@ class IntentMatcher {
 
     if (!accepted) return null;
 
-    final intent =
-        _intents.firstWhere((i) => i.action == top.action);
+    final intent = _intents.firstWhere((i) => i.action == top.action);
     final response = _isMostlyBengali(text)
         ? intent.responseBn
         : intent.responseEn;
@@ -486,7 +573,8 @@ class IntentMatcher {
     double jc,
     double boost,
   ) {
-    final base = _cfg.wDamerauLevenshtein * dl +
+    final base =
+        _cfg.wDamerauLevenshtein * dl +
         _cfg.wJaroWinkler * jw +
         _cfg.wSorensenDice * dc +
         _cfg.wTfIdfCosine * tf +

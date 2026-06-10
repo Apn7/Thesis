@@ -1113,6 +1113,18 @@ class _HomeScreenState extends State<HomeScreen>
                             },
                             color: AppColors.warning,
                           ),
+                          AccessibleActionButton(
+                            icon: Icons.visibility,
+                            label: 'ভিশন',
+                            labelEn: 'Vision',
+                            semanticHint:
+                                'লাইভ ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ ডেমো।',
+                            onPressed: () => Navigator.pushNamed(
+                              context,
+                              AppRoutes.visionDemo,
+                            ),
+                            color: AppColors.accent,
+                          ),
                         ],
                       ),
                     ],

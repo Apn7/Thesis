@@ -75,10 +75,7 @@ class _WaveformPainter extends CustomPainter {
   final double animationValue;
   final double heightScale;
 
-  _WaveformPainter({
-    required this.animationValue,
-    required this.heightScale,
-  });
+  _WaveformPainter({required this.animationValue, required this.heightScale});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -102,17 +99,22 @@ class _WaveformPainter extends CustomPainter {
       final path = Path();
       path.moveTo(0, centerY);
 
-      final phase = (animationValue * speeds[i] * 2 * math.pi) + (offsets[i] * math.pi);
+      final phase =
+          (animationValue * speeds[i] * 2 * math.pi) + (offsets[i] * math.pi);
 
       for (double x = 0; x <= size.width; x += 3) {
         // Taper the ends to 0 amplitude for a smooth start/end
         final normalizedX = x / size.width;
         final taper = math.sin(normalizedX * math.pi);
-        
-        final y = centerY - (math.sin((normalizedX * math.pi * 3) + phase) * maxAmplitude * taper);
+
+        final y =
+            centerY -
+            (math.sin((normalizedX * math.pi * 3) + phase) *
+                maxAmplitude *
+                taper);
         path.lineTo(x, y);
       }
-      
+
       path.lineTo(size.width, centerY);
       path.close();
 
@@ -126,7 +128,7 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) {
-    return oldDelegate.animationValue != animationValue || 
-           oldDelegate.heightScale != heightScale;
+    return oldDelegate.animationValue != animationValue ||
+        oldDelegate.heightScale != heightScale;
   }
 }

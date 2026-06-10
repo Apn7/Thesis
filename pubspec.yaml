@@ -72,6 +72,12 @@ dependencies:
   # On-device LLM inference is handled via a native Android MethodChannel
   # (LiteRT-LM SDK in MainActivity.kt) — no Flutter pub package needed.
 
+  # On-device vision inference (YOLOv11n) for the thesis quantization study.
+  # Official Ultralytics plugin: native CameraX capture + rotation handling,
+  # native preprocessing/NMS/overlay, runtime model switching (FP16 ↔ INT8),
+  # GPU/CPU toggle, and built-in fps/latency metrics.
+  ultralytics_yolo: ^0.6.2
+
 
 dev_dependencies:
   flutter_test:
@@ -100,6 +106,14 @@ flutter:
     - .env
     - assets/intents/intents.json
     - assets/alerts/
+    - assets/models/coco_labels.txt
+    - assets/models/yolo11n_float16.tflite
+    # INT8 export OOM'd during TF import on a constrained machine — see
+    # assets/models/README.md. Re-enable this line once the INT8 .tflite
+    # is generated. Until then the INT8 toggle on the Vision Demo screen
+    # will surface a "model file not found" error, which is the correct
+    # behaviour.
+    # - assets/models/yolo11n_int8.tflite
     # Removed to reduce APK size — re-add when Bengali STT is needed:
     # - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
     # Removed to reduce APK size — re-add when on-device LLM is needed:

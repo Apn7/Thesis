@@ -201,7 +201,8 @@ class VoiceNavigationService extends ChangeNotifier {
         _lastWasLocal = false;
         response = VoiceCommandResponse(
           action: 'none',
-          spokenResponse: 'দুঃখিত, বুঝতে পারিনি। '
+          spokenResponse:
+              'দুঃখিত, বুঝতে পারিনি। '
               "Sorry, I didn't understand.",
         );
         _logResolution(
@@ -276,9 +277,7 @@ class VoiceNavigationService extends ChangeNotifier {
       final top = diag.topCandidates.first;
       final verdict = match != null ? 'ACCEPTED' : 'REJECTED';
       final cmp = match != null ? '>=' : '<';
-      debugPrint(
-        '  top      : ${top.action} <- "${top.phrase}"',
-      );
+      debugPrint('  top      : ${top.action} <- "${top.phrase}"');
       debugPrint(
         '  conf     : ${top.ensembleScore.toStringAsFixed(4)}  '
         '$cmp tau=$tau   $verdict',

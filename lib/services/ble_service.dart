@@ -201,7 +201,9 @@ class BleService extends ChangeNotifier {
         if (name.toLowerCase().contains(
           AppConstants.bleDeviceName.toLowerCase(),
         )) {
-          debugPrint('>> BLE: ★ SmartCane found in bonded list — connecting directly');
+          debugPrint(
+            '>> BLE: ★ SmartCane found in bonded list — connecting directly',
+          );
           _connectToDevice(device);
           return;
         }

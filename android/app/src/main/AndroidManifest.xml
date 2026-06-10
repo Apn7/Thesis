@@ -9,6 +9,10 @@
 
     <!-- Microphone permission for speech recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Camera permission for the Vision Demo screen (live YOLO inference) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     
     <!-- Internet permission for API calls (geocoding, Groq AI) -->
     <uses-permission android:name="android.permission.INTERNET" />

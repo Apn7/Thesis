@@ -28,8 +28,9 @@ class HardwareKeyService {
   static HardwareKeyService get instance =>
       _instance ??= HardwareKeyService._();
 
-  static const MethodChannel _channel =
-      MethodChannel('com.example.test_app_1/hardware_keys');
+  static const MethodChannel _channel = MethodChannel(
+    'com.example.test_app_1/hardware_keys',
+  );
 
   VoidCallback? _onDown;
   VoidCallback? _onUp;

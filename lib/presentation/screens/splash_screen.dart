@@ -94,7 +94,9 @@ class _SplashScreenState extends State<SplashScreen>
         .toList();
 
     if (permanentlyDenied.isNotEmpty && mounted) {
-      debugPrint('Permanently denied: $permanentlyDenied — opening app settings');
+      debugPrint(
+        'Permanently denied: $permanentlyDenied — opening app settings',
+      );
       await showDialog(
         context: context,
         barrierDismissible: false,
