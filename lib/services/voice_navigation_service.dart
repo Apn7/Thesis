@@ -5,6 +5,7 @@ import 'intent_matcher.dart';
 // import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
 import 'speech_service.dart';
 import 'tts_service.dart';
+import '../core/utils/voice_announcer.dart';
 
 /// Navigation actions that can be triggered by voice
 enum VoiceAction {
@@ -61,6 +62,16 @@ class VoiceNavigationService extends ChangeNotifier {
   Future<void> initialize() async {
     debugPrint('[INIT] VoiceNavigationService.initialize()');
 
+    // TTS first — so it is ready to *speak* any failure from the steps below
+    // (e.g. mic permission denied during speech init) instead of failing
+    // silently for a blind user.
+    try {
+      await _tts.initialize();
+      debugPrint('[INIT] TtsService ready');
+    } catch (e) {
+      debugPrint('[INIT] !! TTS init error: $e');
+    }
+
     // Local intent matcher loads its phrase bank + IDF table once at boot.
     try {
       await _matcher.load();
@@ -77,13 +88,6 @@ class VoiceNavigationService extends ChangeNotifier {
       debugPrint('[INIT] SpeechService initialized=${_speech.isInitialized}');
     } catch (e) {
       debugPrint('[INIT] !! Speech init error: $e');
-    }
-
-    try {
-      await _tts.initialize();
-      debugPrint('[INIT] TtsService ready');
-    } catch (e) {
-      debugPrint('[INIT] !! TTS init error: $e');
     }
   }
 
@@ -126,6 +130,9 @@ class VoiceNavigationService extends ChangeNotifier {
       _error = error;
       _isListening = false;
       notifyListeners();
+      // Blind users get no visual cue — surface the failure as audio.  Routes
+      // through TalkBack when it's running (no double-talk), else our own TTS.
+      VoiceAnnouncer.announce(error);
     };
   }
 
@@ -149,6 +156,14 @@ class VoiceNavigationService extends ChangeNotifier {
     _isListening = false;
     notifyListeners();
   }
+
+  /// Short spoken reminder of the main things the user can say, appended
+  /// whenever a command doesn't resolve to an action so a voice-only user
+  /// always has a way forward.  These all resolve locally (no network), so the
+  /// suggestions still work even when the cloud LLM is unreachable.
+  static const String _commandHint =
+      'আপনি বলতে পারেন: আমি কোথায়, ব্যাটারি, সাহায্য, অথবা সেটিংস। '
+      'You can say: where am I, battery, help, or settings.';
 
   /// Process the voice command.
   ///
@@ -215,9 +230,16 @@ class VoiceNavigationService extends ChangeNotifier {
       _logBlockClose();
 
       _lastResponse = response.spokenResponse;
-      await _tts.speak(response.spokenResponse);
-
       final action = _parseAction(response.action);
+
+      // When a command resolves to no action the user is at a dead end —
+      // append a short reminder of what they CAN say so a voice-only user
+      // isn't left guessing.  (Command replies are our own voice → our TTS.)
+      final toSpeak = action == VoiceAction.none
+          ? '${response.spokenResponse} $_commandHint'
+          : response.spokenResponse;
+      await VoiceAnnouncer.speak(toSpeak);
+
       if (action != VoiceAction.none) {
         onNavigationAction?.call(action);
       }
@@ -225,8 +247,8 @@ class VoiceNavigationService extends ChangeNotifier {
       _error = 'Processing error: $e';
       debugPrint('[VOICE] !! processing error: $e');
       _logBlockClose();
-      await _tts.speak(
-        'দুঃখিত, একটি সমস্যা হয়েছে। Sorry, there was an error.',
+      await VoiceAnnouncer.announce(
+        'দুঃখিত, একটি সমস্যা হয়েছে। Sorry, there was an error. $_commandHint',
       );
     } finally {
       _isProcessing = false;
@@ -374,12 +396,5 @@ class VoiceNavigationService extends ChangeNotifier {
   /// Stop speaking
   Future<void> stopSpeaking() async {
     await _tts.stop();
-  }
-
-  /// Send a text command directly (for testing)
-  Future<void> sendTextCommand(String text) async {
-    _currentTranscript = text;
-    notifyListeners();
-    await _processCommand(text);
   }
 }

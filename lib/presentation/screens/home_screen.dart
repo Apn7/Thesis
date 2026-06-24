@@ -23,7 +23,6 @@ class _HomeScreenState extends State<HomeScreen>
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
   // final BleService _bleService = BleService.instance; // Pi BLE — disabled
   final EspBleService _espBleService = EspBleService.instance;
-  bool _isInitialized = false;
   // bool _connectionAnnounced = false; // Pi BLE — disabled
   bool _espConnectionAnnounced = false;
 
@@ -351,10 +350,6 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _initializeServices() async {
     await _voiceService.initialize();
-    await Future.delayed(const Duration(milliseconds: 500));
-    await _voiceService.speak(
-      'স্মার্ট ক্যান অ্যাপে স্বাগতম। বলুন কোথায় যেতে চান। Welcome to Smart Cane. Say where you want to go.',
-    );
   }
 
   void _setupNavigationCallback() {
@@ -384,15 +379,6 @@ class _HomeScreenState extends State<HomeScreen>
           break;
       }
     };
-  }
-
-  void _toggleVoiceListening() async {
-    if (_voiceService.isListening) {
-      await _voiceService.stopListening();
-    } else {
-      await _voiceService.startListening();
-    }
-    setState(() {});
   }
 
   // ── Pi alert banner helpers — disabled ────────────────────────────────────
@@ -893,31 +879,49 @@ class _HomeScreenState extends State<HomeScreen>
                                     : AppColors.primary,
                               ),
                               SizedBox(height: AppConstants.spacingL),
-                              Text(
-                                _voiceService.isProcessing
-                                    ? 'চিন্তা করছি...'
-                                    : _voiceService.isListening
-                                    ? 'শুনছি...'
-                                    : 'ভয়েস কমান্ড',
-                                style: Theme.of(context).textTheme.headlineSmall
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.bold,
-                                      color: _voiceService.isListening
-                                          ? AppColors.accent
-                                          : _voiceService.isProcessing
-                                          ? AppColors.info
-                                          : AppColors.primary,
+                              // Live region: TalkBack auto-announces these
+                              // state changes (Listening/Processing) without
+                              // the user having to swipe to find them.
+                              Semantics(
+                                liveRegion: true,
+                                container: true,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      _voiceService.isProcessing
+                                          ? 'চিন্তা করছি...'
+                                          : _voiceService.isListening
+                                          ? 'শুনছি...'
+                                          : 'ভয়েস কমান্ড',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .headlineSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                            color: _voiceService.isListening
+                                                ? AppColors.accent
+                                                : _voiceService.isProcessing
+                                                ? AppColors.info
+                                                : AppColors.primary,
+                                          ),
                                     ),
-                              ),
-                              SizedBox(height: AppConstants.spacingXs),
-                              Text(
-                                _voiceService.isProcessing
-                                    ? 'Processing...'
-                                    : _voiceService.isListening
-                                    ? 'Listening...'
-                                    : 'Voice Command',
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: AppColors.textSecondary),
+                                    SizedBox(height: AppConstants.spacingXs),
+                                    Text(
+                                      _voiceService.isProcessing
+                                          ? 'Processing...'
+                                          : _voiceService.isListening
+                                          ? 'Listening...'
+                                          : 'Voice Command',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                    ),
+                                  ],
+                                ),
                               ),
                               SizedBox(height: AppConstants.spacingM),
                               Text(
@@ -1013,39 +1017,6 @@ class _HomeScreenState extends State<HomeScreen>
 
                       // ── BLE + alert card (Pi) — disabled ──────────────────────
                       // if (AppConstants.enablePiBle) _buildBleCard(),
-                      SizedBox(height: AppConstants.spacingXl),
-
-                      // ── Test command ──────────────────────────────────────────
-                      Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(AppConstants.spacingM),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'টেস্ট কমান্ড / Test Command',
-                                style: Theme.of(context).textTheme.titleSmall,
-                              ),
-                              SizedBox(height: AppConstants.spacingS),
-                              TextField(
-                                decoration: InputDecoration(
-                                  hintText: 'Type a command...',
-                                  suffixIcon: IconButton(
-                                    icon: const Icon(Icons.send),
-                                    onPressed: () {},
-                                  ),
-                                ),
-                                onSubmitted: (text) {
-                                  if (text.isNotEmpty) {
-                                    _voiceService.sendTextCommand(text);
-                                  }
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-
                       SizedBox(height: AppConstants.spacingXl),
 
                       // ── Navigation grid ───────────────────────────────────────

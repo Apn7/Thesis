@@ -171,8 +171,14 @@ class SpeechService {
           return;
         }
 
-        // Anything else is a real error — bubble up.
-        onError?.call('ভয়েস রিকগনিশন ত্রুটি / STT error: ${error.errorMsg}');
+        // Anything else is a real error — bubble up a clean spoken sentence.
+        // Keep the raw Android code in the log only; TTS would otherwise try
+        // to pronounce strings like "error_audio_error" literally.
+        debugPrint('AndroidSTT: real error ${error.errorMsg}');
+        onError?.call(
+          'ভয়েস শোনা যায়নি, আবার চেষ্টা করুন। '
+          "Couldn't hear you. Please try again.",
+        );
         _isListening = false;
         _completeAndroidStt();
       },

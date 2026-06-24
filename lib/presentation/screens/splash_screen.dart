@@ -3,10 +3,12 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/voice_announcer.dart';
 // import '../../core/utils/constants.dart'; // only needed for enableLlm flag — disabled
 // import '../../services/llm_service.dart'; // on-device LLM — disabled to reduce APK size
 import '../../services/settings_service.dart';
 import '../../services/speech_service.dart';
+import '../../services/tts_service.dart';
 // import '../../services/stt/model_asset_manager.dart'; // Sherpa offline Bengali STT — disabled
 // import '../../services/stt/sherpa_model_config.dart'; // Sherpa offline Bengali STT — disabled
 
@@ -57,6 +59,14 @@ class _SplashScreenState extends State<SplashScreen>
   // ─── Setup ──────────────────────────────────────────────────────
 
   Future<void> _setup() async {
+    // Bring up TTS first so the TalkBack-off path can actually *speak* the
+    // permission guidance below.  TTS needs no permission of its own.
+    try {
+      await TtsService.instance.initialize();
+    } catch (e) {
+      debugPrint('SplashScreen TTS init error: $e');
+    }
+
     try {
       await _requestPermissions();
       // await _copyModels();                            // Bengali STT model — disabled
@@ -74,14 +84,41 @@ class _SplashScreenState extends State<SplashScreen>
   /// Request all dangerous permissions at first launch so blind users never
   /// need to navigate to system Settings manually.
   Future<void> _requestPermissions() async {
-    _update('অনুমতি নেওয়া হচ্ছে...', 'Requesting permissions...', 0.02);
-
-    final statuses = await [
+    final required = <Permission>[
       Permission.bluetoothScan,
       Permission.bluetoothConnect,
       Permission.locationWhenInUse,
       Permission.microphone,
-    ].request();
+    ];
+
+    // Only prompt for what's still missing so repeat launches stay silent —
+    // a blind user shouldn't hear a permission lecture every time they open
+    // the app.
+    final toRequest = <Permission>[];
+    for (final p in required) {
+      if (!(await p.status).isGranted) toRequest.add(p);
+    }
+    if (toRequest.isEmpty) {
+      _update('অনুমতি ✓', 'Permissions ✓', 0.04);
+      return;
+    }
+
+    // Hybrid model: the OS permission dialog can only be read and operated by
+    // a screen reader (TalkBack) or a sighted helper — an app cannot accept it
+    // itself.  With no screen reader running, the user can't see or hear the
+    // dialog, so speak an instruction with our own TTS first.
+    if (!VoiceAnnouncer.screenReaderOn) {
+      await TtsService.instance.speak(
+        'স্মার্ট ক্যানের কিছু অনুমতি প্রয়োজন। অনুমতি দিতে TalkBack চালু করুন, '
+        'অথবা একজন দৃষ্টিমান ব্যক্তির সাহায্য নিন। '
+        'Smart Cane needs some permissions. Please turn on TalkBack to grant '
+        'them, or ask for sighted help.',
+      );
+    }
+
+    _update('অনুমতি নেওয়া হচ্ছে...', 'Requesting permissions...', 0.02);
+
+    final statuses = await toRequest.request();
 
     for (final entry in statuses.entries) {
       debugPrint('Permission ${entry.key}: ${entry.value}');
@@ -95,8 +132,20 @@ class _SplashScreenState extends State<SplashScreen>
 
     if (permanentlyDenied.isNotEmpty && mounted) {
       debugPrint(
-        'Permanently denied: $permanentlyDenied — opening app settings',
+        'Permanently denied: $permanentlyDenied — guiding to settings',
       );
+
+      // TalkBack reads this dialog itself; if it's off, speak it so a blind
+      // user isn't stranded at a silent dialog.
+      if (!VoiceAnnouncer.screenReaderOn) {
+        await TtsService.instance.speak(
+          'কিছু অনুমতি বন্ধ আছে। সেটিংস থেকে অনুমতি দিন। '
+          'Some permissions are blocked. Please allow them in Settings.',
+        );
+      }
+
+      if (!mounted) return;
+
       await showDialog(
         context: context,
         barrierDismissible: false,
@@ -148,6 +197,22 @@ class _SplashScreenState extends State<SplashScreen>
       SettingsService.instance.languageMode,
     );
     _update('প্রস্তুত!', 'Ready!', 1.0);
+
+    if (VoiceAnnouncer.screenReaderOn) {
+      // TalkBack was only needed to grant the permission dialog.  For daily use
+      // the app is self-voicing, and TalkBack's element-by-element narration
+      // competes with our own voice — so ask the user to switch it off.
+      await TtsService.instance.speak(
+        'প্রস্তুত। সবচেয়ে ভালো ব্যবহারের জন্য এখন দুটি ভলিউম বোতাম একসাথে '
+        'তিন সেকেন্ড চেপে ধরে TalkBack বন্ধ করুন। '
+        'Ready. For the best experience, please turn off TalkBack now by '
+        'holding both volume buttons for three seconds.',
+      );
+    } else {
+      // No screen reader — our own TTS gives the ready cue.
+      await VoiceAnnouncer.announce('প্রস্তুত। Ready.');
+    }
+
     await Future.delayed(const Duration(milliseconds: 400));
   }
 
