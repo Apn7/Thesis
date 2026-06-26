@@ -56,4 +56,30 @@ class VisionStrings {
   static const String tileLabelBn = 'ভিশন';
   static const String tileLabelEn = 'Vision';
   static const String tileHintBn = 'লাইভ ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ ডেমো।';
+
+  // ── Pi Zero vision (frames streamed from the cane camera) ──────────────
+  static const String piScreenTitleBn = 'কেন ক্যামেরা';
+  static const String piScreenTitleEn = 'Cane Camera';
+
+  static const String piScreenSemanticBn =
+      'কেন ক্যামেরা স্ক্রীন। লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্ত করা হচ্ছে।';
+  static const String piScreenSemanticEn =
+      'Cane camera screen. Detecting objects from the cane-mounted camera.';
+
+  // Connection states
+  static const String piWaitingBn = 'ক্যামেরার সংযোগের অপেক্ষায়...';
+  static const String piWaitingEn = 'Waiting for camera to connect...';
+
+  static const String piWaitingHintBn =
+      'নিশ্চিত করুন রাস্পবেরি পাই চালু আছে এবং একই ওয়াইফাইতে যুক্ত।';
+  static const String piWaitingHintEn =
+      'Make sure the Raspberry Pi is powered on and on the same Wi-Fi.';
+
+  static const String piServerErrorBn = 'ক্যামেরা সার্ভার চালু করা যায়নি।';
+  static const String piServerErrorEn = 'Could not start the camera server.';
+
+  // Home-screen entry tile
+  static const String piTileLabelBn = 'কেন ক্যাম';
+  static const String piTileLabelEn = 'Cane Cam';
+  static const String piTileHintBn = 'লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ।';
 }

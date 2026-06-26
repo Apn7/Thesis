@@ -10,6 +10,7 @@ import 'presentation/screens/settings_screen.dart';
 import 'presentation/screens/help_screen.dart';
 import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/vision_demo_screen.dart';
+import 'presentation/screens/pi_vision_screen.dart';
 import 'services/hardware_key_service.dart';
 import 'services/voice_navigation_service.dart';
 
@@ -78,6 +79,7 @@ class SmartCaneApp extends StatelessWidget {
         AppRoutes.settings: (context) => const SettingsScreen(),
         AppRoutes.help: (context) => const HelpScreen(),
         AppRoutes.visionDemo: (context) => const VisionDemoScreen(),
+        AppRoutes.piVision: (context) => const PiVisionScreen(),
       },
 
       // Error handling

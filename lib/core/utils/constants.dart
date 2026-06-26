@@ -65,4 +65,23 @@ class AppConstants {
   static const bool enableEspBle = true;
   static const bool enableLlm =
       true; // routes voice commands through GroqService (cloud LLaMA)
+
+  // ── Pi Zero vision (camera frames over WiFi) ──────────────────────────
+  // The Raspberry Pi Zero 2 W + IMX519 camera streams JPEG frames to the
+  // phone, which runs them through the bundled YOLO via YOLO.predict().
+  // See Thesis_pi_zero/PI_ZERO_VISION_PLAN.md. Gate mirrors enableEspBle.
+  static const bool enablePiVision = true;
+
+  /// TCP port the app's frame server listens on. The Pi *dials* the phone
+  /// (the hotspot gateway) here. Must match the Pi's `--port` / config.
+  static const int piFramePort = 8765;
+
+  /// Upper bound on a single frame's byte length. A length prefix larger
+  /// than this means the stream desynced or is corrupt — we drop the
+  /// connection rather than allocate a huge buffer (anti-OOM guard).
+  static const int piMaxFrameBytes = 4 * 1024 * 1024; // 4 MB
+
+  /// Wire framing: each frame is a 4-byte big-endian unsigned length
+  /// prefix followed by that many JPEG bytes.
+  static const int piFrameHeaderBytes = 4;
 }

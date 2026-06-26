@@ -1096,6 +1096,19 @@ class _HomeScreenState extends State<HomeScreen>
                             ),
                             color: AppColors.accent,
                           ),
+                          if (AppConstants.enablePiVision)
+                            AccessibleActionButton(
+                              icon: Icons.video_camera_back,
+                              label: 'কেন ক্যাম',
+                              labelEn: 'Cane Cam',
+                              semanticHint:
+                                  'লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ।',
+                              onPressed: () => Navigator.pushNamed(
+                                context,
+                                AppRoutes.piVision,
+                              ),
+                              color: AppColors.accent,
+                            ),
                         ],
                       ),
                     ],
