@@ -3,72 +3,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../core/utils/constants.dart';
+import 'distance_alert_source.dart';
 
-/// Verdict computed from the latest distance reading.
-enum EspVerdict { noData, critical, warning, caution, safe }
-
-extension EspVerdictX on EspVerdict {
-  String get label {
-    switch (this) {
-      case EspVerdict.noData:
-        return 'NO DATA';
-      case EspVerdict.critical:
-        return 'CRITICAL';
-      case EspVerdict.warning:
-        return 'WARNING';
-      case EspVerdict.caution:
-        return 'CAUTION';
-      case EspVerdict.safe:
-        return 'SAFE';
-    }
-  }
-
-  /// Short Bangla word spoken on verdict *escalation* (severity goes up).
-  /// Continuous distance feedback is carried by the click + vibration
-  /// cadence in the UI layer; speech is reserved for the moment the
-  /// situation gets worse, so the user is informed without being alarmed
-  /// or talked over every few seconds.
-  String get speechText {
-    switch (this) {
-      case EspVerdict.critical:
-        return 'থামুন';
-      case EspVerdict.warning:
-        return 'খুব কাছে';
-      case EspVerdict.caution:
-        return 'কাছে';
-      case EspVerdict.safe:
-        return '';
-      case EspVerdict.noData:
-        return '';
-    }
-  }
-
-  /// Ordinal severity for escalation comparisons.  Speech fires only when
-  /// this value strictly increases between consecutive readings.
-  int get severity {
-    switch (this) {
-      case EspVerdict.critical:
-        return 3;
-      case EspVerdict.warning:
-        return 2;
-      case EspVerdict.caution:
-        return 1;
-      case EspVerdict.safe:
-      case EspVerdict.noData:
-        return 0;
-    }
-  }
-}
-
-/// BLE connection lifecycle state for the ESP32 distance peripheral.
-enum EspBleState {
-  disconnected,
-  scanning,
-  connecting,
-  connected,
-  bluetoothOff,
-  error,
-}
+// Re-export the shared verdict/state types so existing imports of this file
+// (e.g. home_screen) keep resolving `ObstacleVerdict` / `SensorLinkState`.
+export 'distance_alert_source.dart';
 
 /// BLE service that streams raw distance values from the ESP32 firmware
 /// (`Thesis_esp/smart_cane_ble`) and exposes a derived alert verdict.
@@ -76,12 +15,15 @@ enum EspBleState {
 /// The ESP32 sends ASCII strings like `"142.3"` (cm) or `"-1"` (no echo)
 /// every ~200 ms. Verdict thresholds live in `AppConstants` so they can
 /// be tuned without reflashing the firmware.
-class EspBleService extends ChangeNotifier {
+///
+/// Implements [DistanceAlertSource] so it is interchangeable with the
+/// Pi-over-WiFi distance source ([PiDistanceService]).
+class EspBleService extends ChangeNotifier implements DistanceAlertSource {
   static EspBleService? _instance;
   static EspBleService get instance => _instance ??= EspBleService._();
   EspBleService._();
 
-  EspBleState _state = EspBleState.disconnected;
+  SensorLinkState _state = SensorLinkState.disconnected;
   String _statusMessage = 'Initializing...';
   BluetoothDevice? _connectedDevice;
   double? _latestDistance;
@@ -92,47 +34,48 @@ class EspBleService extends ChangeNotifier {
 
   /// Optional callback fired when verdict transitions (e.g. SAFE → CRITICAL).
   /// Use this to drive TTS announcements without spamming on every reading.
-  void Function(EspVerdict verdict)? onVerdictChanged;
-  EspVerdict _lastNotifiedVerdict = EspVerdict.noData;
+  @override
+  void Function(ObstacleVerdict verdict)? onVerdictChanged;
+  ObstacleVerdict _lastNotifiedVerdict = ObstacleVerdict.noData;
 
-  EspBleState get state => _state;
-  bool get isConnected => _state == EspBleState.connected;
-  bool get isScanning => _state == EspBleState.scanning;
+  @override
+  SensorLinkState get state => _state;
+  @override
+  bool get isConnected => _state == SensorLinkState.connected;
+  @override
+  bool get isScanning => _state == SensorLinkState.scanning;
+  @override
   String get statusMessage => _statusMessage;
   String get lastRawValue => _lastRawValue;
+  @override
   double? get latestDistance => _latestDistance;
   String? get connectedDeviceName => _connectedDevice?.platformName;
 
-  /// Verdict derived from the current distance using thresholds in
+  /// Verdict derived from the current distance using the shared thresholds in
   /// `AppConstants`. Returns `noData` when no valid reading is available.
-  EspVerdict get verdict {
-    final d = _latestDistance;
-    if (d == null || d < 0) return EspVerdict.noData;
-    if (d < AppConstants.espCriticalCm) return EspVerdict.critical;
-    if (d < AppConstants.espWarningCm) return EspVerdict.warning;
-    if (d < AppConstants.espCautionCm) return EspVerdict.caution;
-    return EspVerdict.safe;
-  }
+  @override
+  ObstacleVerdict get verdict => verdictForDistanceCm(_latestDistance);
 
+  @override
   Future<void> initialize() async {
     if (await FlutterBluePlus.isSupported == false) {
-      _updateState(EspBleState.error, 'Bluetooth not supported on this device');
+      _updateState(SensorLinkState.error, 'Bluetooth not supported on this device');
       return;
     }
 
     _adapterStateSubscription = FlutterBluePlus.adapterState.listen((s) {
       debugPrint('>> ESP BLE: Adapter state: $s');
       if (s == BluetoothAdapterState.on) {
-        if (_state == EspBleState.bluetoothOff ||
-            _state == EspBleState.disconnected) {
+        if (_state == SensorLinkState.bluetoothOff ||
+            _state == SensorLinkState.disconnected) {
           _updateState(
-            EspBleState.disconnected,
+            SensorLinkState.disconnected,
             'Bluetooth on. Ready to scan.',
           );
           startScanning();
         }
       } else {
-        _updateState(EspBleState.bluetoothOff, 'Bluetooth is off.');
+        _updateState(SensorLinkState.bluetoothOff, 'Bluetooth is off.');
       }
     });
 
@@ -145,25 +88,26 @@ class EspBleService extends ChangeNotifier {
         );
 
     if (current == BluetoothAdapterState.on) {
-      _updateState(EspBleState.disconnected, 'Ready to scan for ESP32.');
+      _updateState(SensorLinkState.disconnected, 'Ready to scan for ESP32.');
       startScanning();
     } else if (current == BluetoothAdapterState.off) {
-      _updateState(EspBleState.bluetoothOff, 'Bluetooth is off.');
+      _updateState(SensorLinkState.bluetoothOff, 'Bluetooth is off.');
     } else {
-      _updateState(EspBleState.error, 'Bluetooth adapter not available.');
+      _updateState(SensorLinkState.error, 'Bluetooth adapter not available.');
     }
   }
 
+  @override
   Future<void> startScanning() async {
-    if (_state == EspBleState.scanning || _state == EspBleState.connected) {
+    if (_state == SensorLinkState.scanning || _state == SensorLinkState.connected) {
       return;
     }
-    if (_state == EspBleState.bluetoothOff) {
-      _updateState(EspBleState.bluetoothOff, 'Cannot scan — Bluetooth off.');
+    if (_state == SensorLinkState.bluetoothOff) {
+      _updateState(SensorLinkState.bluetoothOff, 'Cannot scan — Bluetooth off.');
       return;
     }
 
-    _updateState(EspBleState.scanning, 'Scanning for ESP32...');
+    _updateState(SensorLinkState.scanning, 'Scanning for ESP32...');
     debugPrint('>> ESP BLE: ===== STARTING SCAN =====');
 
     // Try bonded list first — Android does not surface already-paired
@@ -208,33 +152,33 @@ class EspBleService extends ChangeNotifier {
 
       await FlutterBluePlus.isScanning.where((v) => v == false).first;
 
-      if (_state == EspBleState.scanning) {
+      if (_state == SensorLinkState.scanning) {
         _updateState(
-          EspBleState.disconnected,
+          SensorLinkState.disconnected,
           'ESP32 not found. Tap to scan again.',
         );
         if (_autoReconnect) {
           Future.delayed(AppConstants.bleReconnectDelay, () {
-            if (_state == EspBleState.disconnected) startScanning();
+            if (_state == SensorLinkState.disconnected) startScanning();
           });
         }
       }
     } catch (e) {
       debugPrint('>> ESP BLE: Scan error: $e');
-      _updateState(EspBleState.error, 'Scan error: $e');
+      _updateState(SensorLinkState.error, 'Scan error: $e');
     }
   }
 
   Future<void> stopScanning() async {
     await FlutterBluePlus.stopScan();
-    if (_state == EspBleState.scanning) {
-      _updateState(EspBleState.disconnected, 'Scan stopped.');
+    if (_state == SensorLinkState.scanning) {
+      _updateState(SensorLinkState.disconnected, 'Scan stopped.');
     }
   }
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
     _updateState(
-      EspBleState.connecting,
+      SensorLinkState.connecting,
       'Connecting to ${device.platformName}...',
     );
 
@@ -257,13 +201,13 @@ class EspBleService extends ChangeNotifier {
     } catch (e) {
       debugPrint('>> ESP BLE: ✗ Connect failed: $e');
       _connectedDevice = null;
-      _updateState(EspBleState.error, 'Connection failed: $e');
+      _updateState(SensorLinkState.error, 'Connection failed: $e');
       _scheduleReconnect();
     }
   }
 
   Future<void> _discoverAndSubscribe(BluetoothDevice device) async {
-    _updateState(EspBleState.connecting, 'Discovering ESP services...');
+    _updateState(SensorLinkState.connecting, 'Discovering ESP services...');
 
     try {
       try {
@@ -282,7 +226,7 @@ class EspBleService extends ChangeNotifier {
         }
       }
       if (espService == null) {
-        _updateState(EspBleState.error, 'ESP service not found.');
+        _updateState(SensorLinkState.error, 'ESP service not found.');
         return;
       }
 
@@ -294,7 +238,7 @@ class EspBleService extends ChangeNotifier {
         }
       }
       if (distChar == null) {
-        _updateState(EspBleState.error, 'Distance characteristic not found.');
+        _updateState(SensorLinkState.error, 'Distance characteristic not found.');
         return;
       }
 
@@ -307,13 +251,13 @@ class EspBleService extends ChangeNotifier {
       await distChar.setNotifyValue(true);
 
       _updateState(
-        EspBleState.connected,
+        SensorLinkState.connected,
         'Connected to ${device.platformName} ✓',
       );
       debugPrint('>> ESP BLE: ===== READY — STREAMING DISTANCE =====');
     } catch (e) {
       debugPrint('>> ESP BLE: Discover/subscribe failed: $e');
-      _updateState(EspBleState.error, 'Setup failed: $e');
+      _updateState(SensorLinkState.error, 'Setup failed: $e');
     }
   }
 
@@ -334,20 +278,21 @@ class EspBleService extends ChangeNotifier {
   void _handleDisconnection() {
     _connectedDevice = null;
     _latestDistance = null;
-    _lastNotifiedVerdict = EspVerdict.noData;
-    _updateState(EspBleState.disconnected, 'ESP32 disconnected.');
+    _lastNotifiedVerdict = ObstacleVerdict.noData;
+    _updateState(SensorLinkState.disconnected, 'ESP32 disconnected.');
     _scheduleReconnect();
   }
 
   void _scheduleReconnect() {
     if (!_autoReconnect) return;
     Future.delayed(AppConstants.bleReconnectDelay, () {
-      if (_state == EspBleState.disconnected || _state == EspBleState.error) {
+      if (_state == SensorLinkState.disconnected || _state == SensorLinkState.error) {
         startScanning();
       }
     });
   }
 
+  @override
   Future<void> disconnect() async {
     _autoReconnect = false;
     try {
@@ -357,15 +302,15 @@ class EspBleService extends ChangeNotifier {
     }
     _connectedDevice = null;
     _latestDistance = null;
-    _updateState(EspBleState.disconnected, 'Disconnected.');
+    _updateState(SensorLinkState.disconnected, 'Disconnected.');
   }
 
   void enableAutoReconnect() {
     _autoReconnect = true;
-    if (_state == EspBleState.disconnected) startScanning();
+    if (_state == SensorLinkState.disconnected) startScanning();
   }
 
-  void _updateState(EspBleState s, String msg) {
+  void _updateState(SensorLinkState s, String msg) {
     _state = s;
     _statusMessage = msg;
     debugPrint('>> ESP BLE: STATE → $s: $msg');

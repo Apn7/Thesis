@@ -7,6 +7,7 @@ import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
 // import '../../services/ble_service.dart'; // Pi BLE — disabled
 import '../../services/esp_ble_service.dart';
+import '../../services/pi_distance_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/colorful_waveform.dart';
@@ -22,9 +23,15 @@ class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   final VoiceNavigationService _voiceService = VoiceNavigationService.instance;
   // final BleService _bleService = BleService.instance; // Pi BLE — disabled
-  final EspBleService _espBleService = EspBleService.instance;
+  // Distance alert source — ESP32 over BLE, or the Pi (HC-SR04) over WiFi.
+  // Both implement [DistanceAlertSource], so everything below is identical
+  // regardless of which is active. Pi takes precedence when its flag is on
+  // (the two are mutually exclusive distance sources).
+  final DistanceAlertSource _distanceSource = AppConstants.enablePiDistance
+      ? PiDistanceService.instance
+      : EspBleService.instance;
   // bool _connectionAnnounced = false; // Pi BLE — disabled
-  bool _espConnectionAnnounced = false;
+  bool _sensorConnectionAnnounced = false;
 
   // Pi alert state — disabled
   // BleAlert? _currentAlert;
@@ -43,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen>
   /// Last verdict observed, used to fire speech (and the alert tone) only
   /// when severity strictly increases.  De-escalation and return-to-safe
   /// are silent — the user already knows the situation is improving.
-  EspVerdict _lastEspVerdict = EspVerdict.noData;
+  ObstacleVerdict _lastObstacleVerdict = ObstacleVerdict.noData;
 
   /// Pre-loaded player for the CRITICAL alert tone.  Preloading at init
   /// avoids first-play latency at the moment the user most needs immediate
@@ -76,7 +83,7 @@ class _HomeScreenState extends State<HomeScreen>
     // if (AppConstants.enablePiBle) {
     //   _initializeBle();
     // }
-    if (AppConstants.enableEspBle) {
+    if (AppConstants.enableEspBle || AppConstants.enablePiDistance) {
       _initializeEspBle();
     }
   }
@@ -91,8 +98,8 @@ class _HomeScreenState extends State<HomeScreen>
     // if (AppConstants.enablePiBle) {   // Pi BLE — disabled
     //   _bleService.disconnect();
     // }
-    if (AppConstants.enableEspBle) {
-      _espBleService.disconnect();
+    if (AppConstants.enableEspBle || AppConstants.enablePiDistance) {
+      _distanceSource.disconnect();
     }
     super.dispose();
   }
@@ -123,23 +130,23 @@ class _HomeScreenState extends State<HomeScreen>
   // }
 
   Future<void> _initializeEspBle() async {
-    _espBleService.onVerdictChanged = (verdict) {
+    _distanceSource.onVerdictChanged = (verdict) {
       if (!mounted) return;
 
-      final previous = _lastEspVerdict;
-      _lastEspVerdict = verdict;
+      final previous = _lastObstacleVerdict;
+      _lastObstacleVerdict = verdict;
 
       // Any move away from CRITICAL stops the alert tone — the alarm has
       // done its job, no need to keep blaring while the user steps back.
       // (Re-escalation into CRITICAL restarts the tone from the top.)
-      if (verdict != EspVerdict.critical) {
+      if (verdict != ObstacleVerdict.critical) {
         _stopAlertTone();
       }
 
       // Path is clear — silence + stop buzzing.  No "all clear" message;
       // absence of warning IS the all-clear signal, and announcing it
       // would just add noise after every obstacle the user clears.
-      if (verdict == EspVerdict.safe || verdict == EspVerdict.noData) {
+      if (verdict == ObstacleVerdict.safe || verdict == ObstacleVerdict.noData) {
         _vibrationTimer?.cancel();
         _vibrationTimer = null;
         Vibration.cancel();
@@ -165,35 +172,35 @@ class _HomeScreenState extends State<HomeScreen>
         // Distinctive alarm tone — reserved for CRITICAL so the sound
         // itself becomes the user's "stop right now" cue.  Used sparingly
         // so it never becomes background noise.
-        if (verdict == EspVerdict.critical) {
+        if (verdict == ObstacleVerdict.critical) {
           _playAlertTone();
         }
       }
     };
 
-    _espBleService.addListener(() {
+    _distanceSource.addListener(() {
       if (!mounted) return;
       setState(() {});
-      if (_espBleService.state == EspBleState.connected &&
-          !_espConnectionAnnounced) {
-        _espConnectionAnnounced = true;
-        _voiceService.speak('ESP32 সেন্সর সংযুক্ত। ESP32 sensor connected.');
-      } else if (_espBleService.state == EspBleState.disconnected &&
-          _espConnectionAnnounced) {
-        _espConnectionAnnounced = false;
+      if (_distanceSource.state == SensorLinkState.connected &&
+          !_sensorConnectionAnnounced) {
+        _sensorConnectionAnnounced = true;
+        _voiceService.speak('স্মার্ট ক্যান সেন্সর সংযুক্ত। Cane sensor connected.');
+      } else if (_distanceSource.state == SensorLinkState.disconnected &&
+          _sensorConnectionAnnounced) {
+        _sensorConnectionAnnounced = false;
         _vibrationTimer?.cancel();
         _vibrationTimer = null;
         Vibration.cancel();
         _voiceService.stopSpeaking();
         _stopAlertTone();
-        _lastEspVerdict = EspVerdict.noData;
+        _lastObstacleVerdict = ObstacleVerdict.noData;
         _voiceService.speak(
-          'ESP32 সেন্সর বিচ্ছিন্ন। ESP32 sensor disconnected.',
+          'স্মার্ট ক্যান সেন্সর বিচ্ছিন্ন। Cane sensor disconnected.',
         );
       }
     });
 
-    await _espBleService.initialize();
+    await _distanceSource.initialize();
   }
 
   // ── Pi incoming message handler — disabled ────────────────────────────────
@@ -240,10 +247,10 @@ class _HomeScreenState extends State<HomeScreen>
   /// Build the escalation utterance: level word + live distance rounded to
   /// 10 cm.  Rounding stabilises the announcement near threshold boundaries
   /// (47 cm and 53 cm both say "৫০") and keeps the spoken number short.
-  String _escalationSpeech(EspVerdict v) {
+  String _escalationSpeech(ObstacleVerdict v) {
     final base = v.speechText;
     if (base.isEmpty) return '';
-    final d = _espBleService.latestDistance;
+    final d = _distanceSource.latestDistance;
     if (d == null || d <= 0) return base;
     final rounded = (d / 10).round() * 10;
     return '$base ${_bnDigits(rounded)} সেন্টিমিটার';
@@ -257,7 +264,7 @@ class _HomeScreenState extends State<HomeScreen>
   ///            loop (450 ms vibrate every 500 ms).  Effectively continuous;
   ///            paired with the alert tone, this is the user's "stop now"
   ///            signal even if the phone is buried in a bag.
-  void _vibrateForVerdict(EspVerdict verdict) async {
+  void _vibrateForVerdict(ObstacleVerdict verdict) async {
     final hasVibrator = await Vibration.hasVibrator();
     if (hasVibrator != true) return;
 
@@ -267,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen>
     Vibration.cancel();
 
     switch (verdict) {
-      case EspVerdict.critical:
+      case ObstacleVerdict.critical:
         // Near-continuous opening burst: five 600 ms pulses separated by
         // only 80 ms gaps — feels like one long shake with texture.
         Vibration.vibrate(
@@ -280,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen>
           (_) => Vibration.vibrate(duration: 450),
         );
         break;
-      case EspVerdict.warning:
+      case ObstacleVerdict.warning:
         // Medium double pulse, then a 1.5 s repeat.
         Vibration.vibrate(pattern: [0, 250, 120, 250]);
         _vibrationTimer = Timer.periodic(
@@ -288,7 +295,7 @@ class _HomeScreenState extends State<HomeScreen>
           (_) => Vibration.vibrate(duration: 250),
         );
         break;
-      case EspVerdict.caution:
+      case ObstacleVerdict.caution:
         // Triple light tap — distinctive 'tic-tic-tic' rhythm so the user
         // can tell CAUTION apart from WARNING's heavier double-pulse and
         // CRITICAL's continuous shake by feel alone.  Loop every 2.5 s as
@@ -301,8 +308,8 @@ class _HomeScreenState extends State<HomeScreen>
           (_) => Vibration.vibrate(pattern: cautionPattern),
         );
         break;
-      case EspVerdict.safe:
-      case EspVerdict.noData:
+      case ObstacleVerdict.safe:
+      case ObstacleVerdict.noData:
         // Caller guards, but cancel for safety.
         Vibration.cancel();
         break;
@@ -520,27 +527,27 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── ESP32 distance card ────────────────────────────────────────────────
 
-  Color _verdictColor(EspVerdict v) {
+  Color _verdictColor(ObstacleVerdict v) {
     switch (v) {
-      case EspVerdict.critical:
+      case ObstacleVerdict.critical:
         return AppColors.error;
-      case EspVerdict.warning:
+      case ObstacleVerdict.warning:
         return AppColors.warning;
-      case EspVerdict.caution:
+      case ObstacleVerdict.caution:
         return AppColors.accent;
-      case EspVerdict.safe:
+      case ObstacleVerdict.safe:
         return AppColors.success;
-      case EspVerdict.noData:
+      case ObstacleVerdict.noData:
         return AppColors.textSecondary;
     }
   }
 
-  Widget _buildEspCard() {
-    final connected = _espBleService.isConnected;
-    final scanning = _espBleService.isScanning;
-    final btOff = _espBleService.state == EspBleState.bluetoothOff;
-    final v = _espBleService.verdict;
-    final d = _espBleService.latestDistance;
+  Widget _buildDistanceCard() {
+    final connected = _distanceSource.isConnected;
+    final scanning = _distanceSource.isScanning;
+    final btOff = _distanceSource.state == SensorLinkState.bluetoothOff;
+    final v = _distanceSource.verdict;
+    final d = _distanceSource.latestDistance;
     final color = connected ? _verdictColor(v) : AppColors.primary;
 
     return Card(
@@ -590,13 +597,13 @@ class _HomeScreenState extends State<HomeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'ESP32 দূরত্ব / Distance',
+                        'দূরত্ব / Distance',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       SizedBox(height: AppConstants.spacingXs),
                       Text(
-                        _espBleService.statusMessage,
+                        _distanceSource.statusMessage,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: connected ? color : AppColors.textSecondary,
                         ),
@@ -673,9 +680,9 @@ class _HomeScreenState extends State<HomeScreen>
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: () => _espBleService.startScanning(),
+                  onPressed: () => _distanceSource.startScanning(),
                   icon: const Icon(Icons.bluetooth_searching),
-                  label: const Text('Scan for ESP32 / স্ক্যান করুন'),
+                  label: const Text('সেন্সর স্ক্যান করুন / Scan for sensor'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: BorderSide(color: AppColors.primary),
@@ -1010,8 +1017,9 @@ class _HomeScreenState extends State<HomeScreen>
                       SizedBox(height: AppConstants.spacingL),
 
                       // ── ESP32 distance card ───────────────────────────────────
-                      if (AppConstants.enableEspBle) ...[
-                        _buildEspCard(),
+                      if (AppConstants.enableEspBle ||
+                          AppConstants.enablePiDistance) ...[
+                        _buildDistanceCard(),
                         SizedBox(height: AppConstants.spacingL),
                       ],
 
