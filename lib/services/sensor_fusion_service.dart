@@ -536,45 +536,32 @@ class SensorFusionService extends ChangeNotifier {
     return out.toString();
   }
 
-  /// Bangla name for a COCO class label, falling back to the English label
-  /// for anything unmapped. English mode always returns the YOLO label as-is.
+  /// Bangla name for a class label, falling back to the English label for
+  /// anything unmapped. English mode always returns the YOLO label as-is.
   String _labelFor(String en, bool bn) {
     if (!bn) return en;
     return _bnLabels[en.toLowerCase()] ?? en;
   }
 
-  /// Common COCO classes → Bangla. Unmapped labels fall back to English.
+  /// The 16 SafeWalkBD classes → Bangla. Keys are lowercased to match the
+  /// model's class names (e.g. "Over-bridge" → "over-bridge"). Unmapped labels
+  /// fall back to English.
   static const Map<String, String> _bnLabels = {
+    'animal': 'প্রাণী',
+    'crosswalk': 'পারাপার',
+    'obstacle': 'বাধা',
+    'over-bridge': 'ওভারব্রিজ',
     'person': 'মানুষ',
-    'bicycle': 'সাইকেল',
-    'car': 'গাড়ি',
-    'motorcycle': 'মোটরসাইকেল',
-    'bus': 'বাস',
+    'pole': 'খুঁটি',
+    'pothole': 'গর্ত',
+    'railway': 'রেললাইন',
+    'road-barrier': 'রোড ব্যারিয়ার',
+    'sidewalk': 'ফুটপাত',
+    'stairs': 'সিঁড়ি',
+    'traffic-light': 'ট্রাফিক লাইট',
+    'traffic-sign': 'ট্রাফিক সাইন',
     'train': 'ট্রেন',
-    'truck': 'ট্রাক',
-    'traffic light': 'ট্রাফিক লাইট',
-    'fire hydrant': 'হাইড্রেন্ট',
-    'stop sign': 'স্টপ সাইন',
-    'bench': 'বেঞ্চ',
-    'bird': 'পাখি',
-    'cat': 'বিড়াল',
-    'dog': 'কুকুর',
-    'cow': 'গরু',
-    'backpack': 'ব্যাগ',
-    'umbrella': 'ছাতা',
-    'handbag': 'হাতব্যাগ',
-    'bottle': 'বোতল',
-    'cup': 'কাপ',
-    'chair': 'চেয়ার',
-    'couch': 'সোফা',
-    'potted plant': 'গাছ',
-    'bed': 'বিছানা',
-    'dining table': 'টেবিল',
-    'toilet': 'টয়লেট',
-    'tv': 'টিভি',
-    'laptop': 'ল্যাপটপ',
-    'cell phone': 'মোবাইল',
-    'book': 'বই',
-    'clock': 'ঘড়ি',
+    'tree': 'গাছ',
+    'vehicle': 'যানবাহন',
   };
 }

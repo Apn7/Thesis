@@ -1,0 +1,37 @@
+description: Ultralytics YOLO11n model trained on D:\Download\SafeWalkBD.v9i.yolov11\data.yaml
+author: Ultralytics
+date: '2026-06-29T02:58:45.885715'
+version: 8.4.81
+license: AGPL-3.0 License (https://ultralytics.com/license)
+docs: https://docs.ultralytics.com
+stride: 32
+task: detect
+batch: 16
+imgsz:
+- 640
+- 640
+names:
+  0: Animal
+  1: Crosswalk
+  2: Obstacle
+  3: Over-bridge
+  4: Person
+  5: Pole
+  6: Pothole
+  7: Railway
+  8: Road-barrier
+  9: Sidewalk
+  10: Stairs
+  11: Traffic-light
+  12: Traffic-sign
+  13: Train
+  14: Tree
+  15: Vehicle
+args:
+  data: D:/Download/SafeWalkBD.v9i.yolov11/data.yaml
+  batch: 16
+  fraction: 0.1
+  quantize: 8
+  nms: false
+channels: 3
+end2end: false

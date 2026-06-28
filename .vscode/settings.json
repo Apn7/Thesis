@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "D:/Thesis/Thesis_project/Test_app/test_app_1/linux"
+    "cmake.options.statusBarVisibility": "hidden",
+    "cmake.configureOnOpen": false
 }
