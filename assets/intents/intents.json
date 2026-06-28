@@ -180,6 +180,45 @@
         "bn": "এখন সময় বলছি",
         "en": "Telling current time"
       }
+    },
+    {
+      "action": "describe_scene",
+      "phrases": [
+        "সামনে কী আছে",
+        "সামনে কি আছে",
+        "সামনে কী",
+        "সামনে কী দেখছো",
+        "আশেপাশে কী আছে",
+        "চারপাশে কী আছে",
+        "কী দেখছো",
+        "কী দেখতে পাচ্ছো",
+        "পরিবেশ বর্ণনা করো",
+        "আশেপাশে বর্ণনা করো",
+        "সামনে বর্ণনা করো",
+        "what's in front of me",
+        "what is in front of me",
+        "what's in front",
+        "what is ahead",
+        "what's ahead",
+        "what do you see",
+        "what can you see",
+        "describe scene",
+        "describe the scene",
+        "describe surroundings",
+        "describe my surroundings",
+        "what's around me",
+        "samne ki ache",
+        "samne ki",
+        "samne ki dekhcho",
+        "ki dekhcho",
+        "asepashe ki ache",
+        "charpashe ki ache",
+        "poribesh borno koro"
+      ],
+      "responses": {
+        "bn": "সামনে দেখছি",
+        "en": "Describing what's ahead"
+      }
     }
   ]
 }

@@ -73,7 +73,11 @@ class _PiVisionScreenState extends State<PiVisionScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _server = PiFrameServer()..addListener(_onServerUpdate);
+    // Shared, reference-counted singleton — the always-on SensorFusionService
+    // may already be streaming from it. We attach a listener and start() (bumps
+    // the consumer count); stop() in dispose() releases our reference without
+    // tearing down the socket if fusion is still using it.
+    _server = PiFrameServer.instance..addListener(_onServerUpdate);
     _yolo = YOLO(
       modelPath: 'assets/models/${ModelVariant.fp16.assetFile}',
       task: YOLOTask.detect,
@@ -87,16 +91,19 @@ class _PiVisionScreenState extends State<PiVisionScreen>
 
   Future<void> _init() async {
     // Load the model and bind the socket in parallel.
-    final loadModel = _yolo.loadModel().then((ok) {
-      if (!mounted) return;
-      setState(() {
-        _modelReady = ok;
-        if (!ok) _modelError = 'Model failed to load.';
-      });
-    }).catchError((Object e) {
-      debugPrint('PiVisionScreen: model load failed — $e');
-      if (mounted) setState(() => _modelError = '$e');
-    });
+    final loadModel = _yolo
+        .loadModel()
+        .then((ok) {
+          if (!mounted) return;
+          setState(() {
+            _modelReady = ok;
+            if (!ok) _modelError = 'Model failed to load.';
+          });
+        })
+        .catchError((Object e) {
+          debugPrint('PiVisionScreen: model load failed — $e');
+          if (mounted) setState(() => _modelError = '$e');
+        });
     await Future.wait([loadModel, _server.start()]);
     // A frame may already be waiting if the Pi connected during model load.
     unawaited(_maybeProcess());
@@ -106,7 +113,9 @@ class _PiVisionScreenState extends State<PiVisionScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _server.removeListener(_onServerUpdate);
-    _server.dispose();
+    // Release our reference (does NOT close the socket if fusion still holds
+    // a reference). Never dispose() — it's a shared singleton.
+    _server.stop();
     _renderImage?.dispose();
     // YOLO holds native resources; release them.
     _yolo.dispose();
@@ -303,7 +312,10 @@ class _PiVisionScreenState extends State<PiVisionScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _chip(VisionStrings.latencyLabelEn, '${_latencyMs.toStringAsFixed(0)} ms'),
+          _chip(
+            VisionStrings.latencyLabelEn,
+            '${_latencyMs.toStringAsFixed(0)} ms',
+          ),
           _chip(VisionStrings.fpsLabelEn, _fps.toStringAsFixed(1)),
           _chip('Frames', '${_server.framesReceived}'),
         ],
@@ -477,7 +489,10 @@ class _PiOverlayPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final imageSize = Size(image.width.toDouble(), image.height.toDouble());
     final fitted = applyBoxFit(BoxFit.contain, imageSize, size);
-    final dst = Alignment.center.inscribe(fitted.destination, Offset.zero & size);
+    final dst = Alignment.center.inscribe(
+      fitted.destination,
+      Offset.zero & size,
+    );
     final src = Offset.zero & imageSize;
 
     canvas.drawImageRect(
@@ -521,7 +536,10 @@ class _PiOverlayPainter extends CustomPainter {
     double ly = box.top - tp.height;
     if (ly < bounds.top) ly = box.top;
     final lx = box.left
-        .clamp(bounds.left, (bounds.right - tp.width).clamp(bounds.left, bounds.right))
+        .clamp(
+          bounds.left,
+          (bounds.right - tp.width).clamp(bounds.left, bounds.right),
+        )
         .toDouble();
 
     canvas.drawRect(

@@ -38,13 +38,31 @@ enum PiServerState {
 /// rate, so we keep only [latestFrame] and bump [frameId] on each arrival.
 /// Consumers process the latest frame when free and skip the rest — there is
 /// no unbounded queue to fall behind on.
+///
+/// **Shared singleton (one socket, many consumers).** A TCP port can only be
+/// bound once, but two parts of the app want the Pi's frames at the same time:
+/// the always-on [SensorFusionService] on `HomeScreen`, and the optional
+/// [PiVisionScreen] debug view. They therefore share this single instance.
+/// [start]/[stop] are *reference-counted* — the socket binds on the first
+/// [start] and only closes when the last consumer [stop]s — so opening or
+/// closing the debug screen never disturbs the live fusion pipeline.
 class PiFrameServer extends ChangeNotifier {
-  PiFrameServer({int? port, int? maxFrameBytes})
+  static PiFrameServer? _instance;
+
+  /// The shared frame server. All consumers must use this — constructing a
+  /// second server would fail to bind the (single) [AppConstants.piFramePort].
+  static PiFrameServer get instance => _instance ??= PiFrameServer._();
+
+  PiFrameServer._({int? port, int? maxFrameBytes})
     : _port = port ?? AppConstants.piFramePort,
       _maxFrameBytes = maxFrameBytes ?? AppConstants.piMaxFrameBytes;
 
   final int _port;
   final int _maxFrameBytes;
+
+  /// Number of live consumers that have called [start] without a matching
+  /// [stop]. The socket stays bound while this is > 0.
+  int _consumers = 0;
 
   ServerSocket? _server;
   Socket? _client;
@@ -81,10 +99,13 @@ class PiFrameServer extends ChangeNotifier {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────
 
-  /// Binds the server socket. Safe to call when already listening (no-op).
+  /// Registers a consumer and binds the server socket on first use. Safe to
+  /// call when already listening — extra calls just bump the consumer count
+  /// (each must be balanced by a [stop]).
   Future<void> start() async {
+    _consumers++;
     if (_disposed) return;
-    if (_server != null) return; // already started
+    if (_server != null) return; // already bound; new consumer shares it
     try {
       // anyIPv4 so the Pi (on the hotspot subnet) can reach us; shared:false
       // because we want exactly one listener for this port.
@@ -107,10 +128,14 @@ class PiFrameServer extends ChangeNotifier {
     }
   }
 
-  /// Closes the client and server sockets and resets to [PiServerState.idle].
+  /// Releases one consumer. The client and server sockets are only torn down
+  /// (resetting to [PiServerState.idle]) once the *last* consumer stops, so a
+  /// debug screen closing doesn't kill the socket the fusion layer still needs.
   /// Frame data ([latestFrame]) is retained so a paused screen can still show
-  /// the last frame; call again or [dispose] to fully tear down.
+  /// the last frame.
   Future<void> stop() async {
+    if (_consumers > 0) _consumers--;
+    if (_consumers > 0) return; // other consumers still need the stream
     _dropClient();
     final server = _server;
     _server = null;
@@ -147,7 +172,9 @@ class PiFrameServer extends ChangeNotifier {
       _dropClient();
     }
 
-    debugPrint('PiFrameServer: client connected ${socket.remoteAddress.address}');
+    debugPrint(
+      'PiFrameServer: client connected ${socket.remoteAddress.address}',
+    );
     _client = socket;
     _resetParser();
     _framesReceived = 0;

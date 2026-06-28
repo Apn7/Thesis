@@ -59,7 +59,10 @@ class EspBleService extends ChangeNotifier implements DistanceAlertSource {
   @override
   Future<void> initialize() async {
     if (await FlutterBluePlus.isSupported == false) {
-      _updateState(SensorLinkState.error, 'Bluetooth not supported on this device');
+      _updateState(
+        SensorLinkState.error,
+        'Bluetooth not supported on this device',
+      );
       return;
     }
 
@@ -99,11 +102,15 @@ class EspBleService extends ChangeNotifier implements DistanceAlertSource {
 
   @override
   Future<void> startScanning() async {
-    if (_state == SensorLinkState.scanning || _state == SensorLinkState.connected) {
+    if (_state == SensorLinkState.scanning ||
+        _state == SensorLinkState.connected) {
       return;
     }
     if (_state == SensorLinkState.bluetoothOff) {
-      _updateState(SensorLinkState.bluetoothOff, 'Cannot scan — Bluetooth off.');
+      _updateState(
+        SensorLinkState.bluetoothOff,
+        'Cannot scan — Bluetooth off.',
+      );
       return;
     }
 
@@ -238,7 +245,10 @@ class EspBleService extends ChangeNotifier implements DistanceAlertSource {
         }
       }
       if (distChar == null) {
-        _updateState(SensorLinkState.error, 'Distance characteristic not found.');
+        _updateState(
+          SensorLinkState.error,
+          'Distance characteristic not found.',
+        );
         return;
       }
 
@@ -286,7 +296,8 @@ class EspBleService extends ChangeNotifier implements DistanceAlertSource {
   void _scheduleReconnect() {
     if (!_autoReconnect) return;
     Future.delayed(AppConstants.bleReconnectDelay, () {
-      if (_state == SensorLinkState.disconnected || _state == SensorLinkState.error) {
+      if (_state == SensorLinkState.disconnected ||
+          _state == SensorLinkState.error) {
         startScanning();
       }
     });

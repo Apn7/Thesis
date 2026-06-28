@@ -28,8 +28,7 @@ import 'distance_alert_source.dart';
 /// value in queueing stale distances, so we keep only the latest.
 class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
   static PiDistanceService? _instance;
-  static PiDistanceService get instance =>
-      _instance ??= PiDistanceService._();
+  static PiDistanceService get instance => _instance ??= PiDistanceService._();
   PiDistanceService._();
 
   final int _port = AppConstants.piDistancePort;
@@ -99,7 +98,10 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
         cancelOnError: false,
       );
       debugPrint('PiDistanceService: listening on 0.0.0.0:$_port');
-      _updateState(SensorLinkState.scanning, 'Waiting for cane sensor (WiFi)...');
+      _updateState(
+        SensorLinkState.scanning,
+        'Waiting for cane sensor (WiFi)...',
+      );
     } on Object catch (e) {
       // Most likely: port already in use (a stale instance, or two screens).
       _setError('Could not bind port $_port: $e');
@@ -195,7 +197,10 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
         !_disposed &&
         _server != null &&
         _state == SensorLinkState.connected) {
-      _updateState(SensorLinkState.scanning, 'Waiting for cane sensor (WiFi)...');
+      _updateState(
+        SensorLinkState.scanning,
+        'Waiting for cane sensor (WiFi)...',
+      );
     }
   }
 

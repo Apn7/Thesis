@@ -8,9 +8,11 @@ import '../../core/navigation/app_routes.dart';
 // import '../../services/ble_service.dart'; // Pi BLE — disabled
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/colorful_waveform.dart';
+import '../widgets/fusion_debug_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -86,10 +88,19 @@ class _HomeScreenState extends State<HomeScreen>
     if (AppConstants.enableEspBle || AppConstants.enablePiDistance) {
       _initializeEspBle();
     }
+    // Sensor fusion (camera detections + sonar) runs from HomeScreen so the
+    // blind user never has to open the Cane Cam screen. Additive — it reads
+    // the same PiDistanceService and shares the PiFrameServer singleton.
+    if (AppConstants.enableSensorFusion) {
+      SensorFusionService.instance.start();
+    }
   }
 
   @override
   void dispose() {
+    if (AppConstants.enableSensorFusion) {
+      SensorFusionService.instance.stop();
+    }
     _vibrationTimer?.cancel();
     Vibration.cancel(); // stop any ongoing vibration immediately
     _alertPlayer.dispose();
@@ -146,7 +157,8 @@ class _HomeScreenState extends State<HomeScreen>
       // Path is clear — silence + stop buzzing.  No "all clear" message;
       // absence of warning IS the all-clear signal, and announcing it
       // would just add noise after every obstacle the user clears.
-      if (verdict == ObstacleVerdict.safe || verdict == ObstacleVerdict.noData) {
+      if (verdict == ObstacleVerdict.safe ||
+          verdict == ObstacleVerdict.noData) {
         _vibrationTimer?.cancel();
         _vibrationTimer = null;
         Vibration.cancel();
@@ -184,7 +196,9 @@ class _HomeScreenState extends State<HomeScreen>
       if (_distanceSource.state == SensorLinkState.connected &&
           !_sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = true;
-        _voiceService.speak('স্মার্ট ক্যান সেন্সর সংযুক্ত। Cane sensor connected.');
+        _voiceService.speak(
+          'স্মার্ট ক্যান সেন্সর সংযুক্ত। Cane sensor connected.',
+        );
       } else if (_distanceSource.state == SensorLinkState.disconnected &&
           _sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = false;
@@ -381,6 +395,10 @@ class _HomeScreenState extends State<HomeScreen>
           _voiceService.speak(
             'সময় ${now.hour}:${now.minute}। Time is ${now.format(context)}.',
           );
+          break;
+        case VoiceAction.describeScene:
+          // Handled in-place by VoiceNavigationService (speaks the fusion
+          // scene description); nothing to route here.
           break;
         case VoiceAction.none:
           break;
@@ -1020,6 +1038,15 @@ class _HomeScreenState extends State<HomeScreen>
                       if (AppConstants.enableEspBle ||
                           AppConstants.enablePiDistance) ...[
                         _buildDistanceCard(),
+                        SizedBox(height: AppConstants.spacingL),
+                      ],
+
+                      // ── Sensor-fusion debug panel ─────────────────────────────
+                      // Developer aid: shows what the fusion layer detects /
+                      // confirms / speaks. Has its own ListenableBuilder so its
+                      // frame-rate rebuilds don't churn the whole HomeScreen.
+                      if (AppConstants.enableSensorFusion) ...[
+                        const FusionDebugCard(),
                         SizedBox(height: AppConstants.spacingL),
                       ],
 

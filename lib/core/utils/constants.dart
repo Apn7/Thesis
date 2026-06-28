@@ -108,4 +108,38 @@ class AppConstants {
   /// line longer than this means the stream desynced or is garbage, so we drop
   /// the connection and let the Pi redial rather than buffer unboundedly.
   static const int piDistanceMaxLineBytes = 64;
+
+  // ── Sensor Fusion (camera detections + sonar distance) ────────────────
+  // Combines the Pi camera's YOLO detections with the HC-SR04 sonar distance
+  // into meaningful, non-overwhelming spoken alerts for the blind user. Runs
+  // on HomeScreen (the user never has to open the Cane Cam debug screen).
+  // Research provenance (see compass_artifact validation doc): ISANA, GlAccess
+  // (state-change-only announcements + priority layer), Bai et al. (sonar
+  // fallback for glass/poles). Additive — it never alters the existing
+  // distance-alert haptics/tone flow in HomeScreen.
+  //
+  // Master switch — flip to false to fully detach the fusion layer.
+  static const bool enableSensorFusion = true;
+
+  /// Sliding-window frame count. An object is only *confirmed* (and eligible
+  /// to be announced) once it appears in a majority of the last N frames —
+  /// this stabilises flickery single-frame detections. At the Pi path's
+  /// ~8–9 fps, 5 frames ≈ 0.5 s of evidence (acceptable latency).
+  static const int fusionWindowSize = 5;
+
+  /// Minimum frames (out of [fusionWindowSize]) an object must appear in to
+  /// be confirmed. 3/5 = simple majority vote.
+  static const int fusionMajorityThreshold = 3;
+
+  /// Per-(zone,label) re-announcement cooldown. A confirmed object that stays
+  /// put is not re-announced within this window, so the user isn't nagged.
+  static const int fusionCooldownMs = 3000;
+
+  /// Top-N objects included in an on-demand "what's in front of me?" reply.
+  static const int fusionOnDemandTopN = 3;
+
+  /// The sonar distance is only assigned to a detection / spoken as a fallback
+  /// when it is within range. Beyond this (≈ HC-SR04 max range) the reading is
+  /// "no obstacle", not a measurement, so we don't announce a distance.
+  static const double fusionSonarMaxAssignCm = 400.0;
 }

@@ -3,6 +3,8 @@ import '../core/utils/constants.dart';
 import 'groq_service.dart';
 import 'intent_matcher.dart';
 // import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
+import 'sensor_fusion_service.dart';
+import 'settings_service.dart';
 import 'speech_service.dart';
 import 'tts_service.dart';
 import '../core/utils/voice_announcer.dart';
@@ -15,6 +17,10 @@ enum VoiceAction {
   navigateHelp,
   speakBattery,
   speakTime,
+
+  /// "What's in front of me?" — answered locally from the fusion window
+  /// rather than by navigating anywhere.
+  describeScene,
   none,
 }
 
@@ -232,15 +238,27 @@ class VoiceNavigationService extends ChangeNotifier {
       _lastResponse = response.spokenResponse;
       final action = _parseAction(response.action);
 
-      // When a command resolves to no action the user is at a dead end —
-      // append a short reminder of what they CAN say so a voice-only user
-      // isn't left guessing.  (Command replies are our own voice → our TTS.)
-      final toSpeak = action == VoiceAction.none
-          ? '${response.spokenResponse} $_commandHint'
-          : response.spokenResponse;
+      final String toSpeak;
+      if (action == VoiceAction.describeScene) {
+        // Answer from the live fusion window instead of speaking the canned
+        // intent reply — this is what makes "what's in front of me?" useful.
+        toSpeak = SensorFusionService.instance.getSceneDescription(
+          SettingsService.instance.languageMode,
+        );
+        _lastResponse = toSpeak;
+      } else if (action == VoiceAction.none) {
+        // When a command resolves to no action the user is at a dead end —
+        // append a short reminder of what they CAN say so a voice-only user
+        // isn't left guessing.  (Command replies are our own voice → our TTS.)
+        toSpeak = '${response.spokenResponse} $_commandHint';
+      } else {
+        toSpeak = response.spokenResponse;
+      }
       await VoiceAnnouncer.speak(toSpeak);
 
-      if (action != VoiceAction.none) {
+      // describeScene is answered in-place above; everything else that maps to
+      // a real action routes through the navigation callback.
+      if (action != VoiceAction.none && action != VoiceAction.describeScene) {
         onNavigationAction?.call(action);
       }
     } catch (e) {
@@ -383,6 +401,8 @@ class VoiceNavigationService extends ChangeNotifier {
         return VoiceAction.speakBattery;
       case 'speak_time':
         return VoiceAction.speakTime;
+      case 'describe_scene':
+        return VoiceAction.describeScene;
       default:
         return VoiceAction.none;
     }
