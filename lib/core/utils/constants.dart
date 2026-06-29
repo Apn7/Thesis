@@ -142,4 +142,30 @@ class AppConstants {
   /// when it is within range. Beyond this (≈ HC-SR04 max range) the reading is
   /// "no obstacle", not a measurement, so we don't announce a distance.
   static const double fusionSonarMaxAssignCm = 400.0;
+
+  // ── Sensor Fusion v2: Bayesian existence filter + scheduler ───────────
+  // Replaces the 3-of-5 majority vote above (kept for A/B) with a per-class
+  // recursive Bayesian existence estimate (Layer 1) feeding a bandwidth-limited
+  // announcement scheduler (Layer 2), plus distance/looming enrichment (Layer
+  // 3). Full rationale, math and per-class calibration: FUSION_REDESIGN.md.
+  //
+  // `final` (not const) so the legacy vote stays live code for analysis/A-B and
+  // so the algorithm can be toggled without a dead-code branch.
+  static final bool fusionUseBayesian = true;
+
+  // Layer 1 — existence filter (log-odds). Confirm/drop use hysteresis so a
+  // cell never chatters on the boundary; the clamp bounds dwell/memory length.
+  static const double fusionConfirmLogOdds = 0.85; // ℓ_high ≈ P(exist) 0.70
+  static const double fusionDropLogOdds = -0.85; // ℓ_low  ≈ P(exist) 0.30
+  static const double fusionLogOddsClamp =
+      3.0; // ± bound on accumulated evidence
+
+  // Layer 2 — announcement scheduler (perception-bandwidth model).
+  static const int fusionMinGapMs = 2500; // token-bucket cadence at normal load
+  static const int fusionPreemptGapMs =
+      800; // floor a Tier-1 hazard may preempt to
+  static const int fusionRefractoryMs =
+      6000; // novelty fully recovers after this
+  static const double fusionUtilityFloor =
+      0.20; // stay silent below this utility
 }

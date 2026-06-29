@@ -7,6 +7,9 @@ import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 import '../core/utils/constants.dart';
 import 'detection_models.dart';
 import 'distance_alert_source.dart';
+import 'fusion/announcement_scheduler.dart';
+import 'fusion/existence_grid.dart';
+import 'fusion/track.dart';
 import 'pi_distance_service.dart';
 import 'pi_frame_server.dart';
 import 'settings_service.dart';
@@ -63,7 +66,13 @@ class SensorFusionService extends ChangeNotifier {
   int _lastProcessedId = -1;
 
   // ── Sliding window of the last N frames' detections ───────────────────
+  // Used by the legacy majority-vote path and by getSceneDescription().
   final Queue<List<Detection>> _window = Queue<List<Detection>>();
+
+  // ── Fusion v2 (active when AppConstants.fusionUseBayesian) ─────────────
+  // Layer 1 perception + Layer 2 communication. See FUSION_REDESIGN.md.
+  final ExistenceGrid _grid = ExistenceGrid();
+  final AnnouncementScheduler _scheduler = AnnouncementScheduler();
 
   // ── Last-announced state per zone (for state-change detection) ─────────
   String? _lastCenter;
@@ -179,6 +188,8 @@ class SensorFusionService extends ChangeNotifier {
     _busy = false;
     _lastProcessedId = -1;
     _window.clear();
+    _grid.reset();
+    _scheduler.reset();
     _resetAnnouncementState();
     _latestDetections = const [];
     _latestProcessedJpeg = null;
@@ -290,6 +301,14 @@ class SensorFusionService extends ChangeNotifier {
     while (_window.length > AppConstants.fusionWindowSize) {
       _window.removeFirst();
     }
+
+    // v2 path: per-class Bayesian existence filter + scheduler (FUSION_REDESIGN.md).
+    if (AppConstants.fusionUseBayesian) {
+      _onFrameBayesian(detections);
+      return;
+    }
+
+    // ── Legacy 3-of-5 majority-vote path (kept for A/B comparison) ──
     if (_window.length < AppConstants.fusionWindowSize) {
       notifyListeners(); // window still warming up — show live detections
       return;
@@ -379,6 +398,169 @@ class SensorFusionService extends ChangeNotifier {
     }
 
     notifyListeners();
+  }
+
+  // ── Fusion core v2 (Bayesian existence filter + scheduler) ─────────────
+  // Layer 1 = ExistenceGrid (perception); Layer 3 = distance/looming
+  // enrichment here; Layer 2 = AnnouncementScheduler. See FUSION_REDESIGN.md.
+
+  void _onFrameBayesian(List<Detection> detections) {
+    final now = DateTime.now();
+    final confirmed = _grid.update(detections); // all currently-confirmed cells
+
+    final distCm = _distance.latestDistance;
+    final verdict = verdictForDistanceCm(distCm);
+    final bn = SettingsService.instance.languageMode == 'bn';
+    final inRange =
+        distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
+
+    // Fresh = confirmed AND detected this frame (have a current box). Only these
+    // are announce/distance candidates; lingering cells just keep the picture
+    // stable and suppress re-announcement.
+    final fresh = confirmed.where((t) => t.seenThisFrame).toList();
+
+    // Layer 3: give the single sonar reading to the nearest ground-contacting
+    // hazard, and score proximity for every fresh track.
+    _assignDistanceAndProximity(fresh, distCm, inRange);
+
+    // Sonar-only fallback: nothing recognised dead ahead but the sonar sees
+    // something (glass, a thin pole) — worth a heads-up.
+    final hasCenter = fresh.any((t) => t.zone == PositionZone.center);
+    if (!hasCenter && inRange) {
+      fresh.add(_obstacleTrack(distCm));
+    }
+
+    _publishConfirmedSnapshot(confirmed, fresh);
+
+    // PRIORITY LAYER: while sonar verdict is CRITICAL, HomeScreen's proximity
+    // alarm owns the audio channel. Stay silent and forget scheduler state so
+    // the scene re-announces fresh once the danger clears.
+    if (verdict == ObstacleVerdict.critical) {
+      _scheduler.reset();
+      notifyListeners();
+      return;
+    }
+
+    // Layer 2: at most one short utterance (≤2 zones), center-first.
+    final picks = _scheduler.select(fresh, now: now);
+    if (picks.isNotEmpty) {
+      _orderForUtterance(picks);
+      final utterance = picks
+          .map((t) => _phraseFor(t, bn))
+          .join(bn ? '। ' : '. ');
+      _lastAnnouncement = utterance;
+      _tts.speak(utterance);
+    }
+
+    notifyListeners();
+  }
+
+  /// Layer 3 — assign the one sonar reading to the nearest ground-contacting
+  /// hazard in the center (not merely the biggest box, which a background tree
+  /// could win), then score proximity for every fresh track (0..1, closer ⇒ 1).
+  void _assignDistanceAndProximity(
+    List<Track> fresh,
+    double? distCm,
+    bool inRange,
+  ) {
+    if (inRange && distCm != null) {
+      Track? target;
+      double bestScore = -1;
+      for (final t in fresh) {
+        if (t.zone != PositionZone.center) continue;
+        final sev = t.tier == 1
+            ? 1.0
+            : t.tier == 2
+            ? 0.6
+            : 0.2;
+        final score = t.box.y2 * sev; // lower edge ⇒ nearer the ground/user
+        if (score > bestScore) {
+          bestScore = score;
+          target = t;
+        }
+      }
+      target?.distanceCm = distCm;
+    }
+
+    const maxA = AppConstants.fusionSonarMaxAssignCm;
+    const crit = AppConstants.espCriticalCm;
+    for (final t in fresh) {
+      final d = t.distanceCm;
+      if (d != null) {
+        t.proximity = ((maxA - d) / (maxA - crit)).clamp(0.0, 1.0);
+      } else {
+        // No sonar on this track: a lower / bigger box is likely closer.
+        // Capped so a camera-only guess can't outrank a sonar-confirmed hazard.
+        t.proximity = (0.3 + 0.5 * t.box.y2).clamp(0.0, 0.85);
+      }
+    }
+  }
+
+  /// Synthetic "something ahead" track for the sonar-only fallback.
+  Track _obstacleTrack(double distCm) {
+    const maxA = AppConstants.fusionSonarMaxAssignCm;
+    const crit = AppConstants.espCriticalCm;
+    return Track(
+      label: '__obstacle__',
+      zone: PositionZone.center,
+      existence: 1.0,
+      box: const BBox(0.34, 0.5, 0.66, 1.0),
+      areaTrend: 0,
+      tier: 1,
+      seenThisFrame: true,
+      distanceCm: distCm,
+      proximity: ((maxA - distCm) / (maxA - crit)).clamp(0.0, 1.0),
+    );
+  }
+
+  /// Publish the confirmed per-zone picture for the debug panel / Cane Cam.
+  void _publishConfirmedSnapshot(List<Track> confirmed, List<Track> fresh) {
+    String? center, left, right;
+    double cBest = -1, lBest = -1, rBest = -1;
+    // The sonar-only obstacle, when present, owns the center slot.
+    if (fresh.any((t) => t.label == '__obstacle__')) {
+      center = '__obstacle__';
+      cBest = 2;
+    }
+    for (final t in confirmed) {
+      if (t.zone == PositionZone.center) {
+        if (t.existence > cBest) {
+          cBest = t.existence;
+          center = t.label;
+        }
+      } else if (t.zone == PositionZone.left) {
+        if (t.existence > lBest) {
+          lBest = t.existence;
+          left = t.label;
+        }
+      } else {
+        if (t.existence > rBest) {
+          rBest = t.existence;
+          right = t.label;
+        }
+      }
+    }
+    _confirmedCenter = center;
+    _confirmedLeft = left;
+    _confirmedRight = right;
+  }
+
+  /// Order picks center → left → right for a natural single utterance.
+  void _orderForUtterance(List<Track> picks) {
+    int rank(PositionZone z) =>
+        z == PositionZone.center ? 0 : (z == PositionZone.left ? 1 : 2);
+    picks.sort((a, b) => rank(a.zone).compareTo(rank(b.zone)));
+  }
+
+  String _phraseFor(Track t, bool bn) {
+    if (t.label == '__obstacle__') {
+      return _obstaclePhrase(t.distanceCm ?? 0, bn);
+    }
+    if (t.zone == PositionZone.center) {
+      final approaching = t.tier == 1 && t.seenThisFrame && t.areaTrend > 0.15;
+      return _centerPhrase(t.label, t.distanceCm, bn, approaching: approaching);
+    }
+    return _sidePhrase(t.label, t.zone, bn);
   }
 
   /// Stores the latest sonar reading. Kept for API symmetry with the plan /
@@ -517,8 +699,23 @@ class SensorFusionService extends ChangeNotifier {
 
   // ── Phrasing (bilingual) ──────────────────────────────────────────────
 
-  String _centerPhrase(String label, double? distCm, bool bn) {
+  String _centerPhrase(
+    String label,
+    double? distCm,
+    bool bn, {
+    bool approaching = false,
+  }) {
     final name = _labelFor(label, bn);
+    if (approaching) {
+      // Looming cue (Layer 3): the bbox is growing ⇒ the hazard is closing in.
+      if (distCm == null) {
+        return bn ? '$name এগিয়ে আসছে' : '$name approaching';
+      }
+      final m = _metersStr(distCm, bn);
+      return bn
+          ? '$name এগিয়ে আসছে, $m মিটার'
+          : '$name approaching, $m meters';
+    }
     if (distCm == null) {
       return bn ? 'সামনে $name' : '$name ahead';
     }
