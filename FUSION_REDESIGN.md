@@ -570,7 +570,68 @@ depends on it.
 
 ---
 
-## 11. References
+## 11. Per-class rationale — which class gets what, and why (the two-decision model)
+
+This is the section to read (or quote) when asked "why does class X behave that way?". Every class
+is governed by **two independent decisions**, and the design's strength is that they are kept
+separate:
+
+1. **"Should I believe the camera?"** (Layer 1) — set by the model's **measured reliability**
+   (recall + false-alarm rate from the confusion matrix). A **data decision**: the model *earns* it.
+2. **"Is it worth telling a blind person?"** (Layer 2) — set by the **severity tier**. A
+   **safety/human decision**: we *assign* it from domain knowledge of a Bangladeshi footpath.
+
+A class can be high on one and low on the other. That decoupling is precisely why a rarely-detected
+**pothole** can be *loud* while a constantly-detected **sidewalk** stays *silent* — something a single
+threshold (the old vote) structurally cannot express.
+
+### 11.1 Decision 1 — how much we trust the camera (derived from §4.3, data)
+
+The `lHit`/`lMiss` values produce three trust behaviours. (Confirm threshold `ℓ_high = +0.85`, so a
+class confirms on one frame iff `lHit ≥ 0.85`; how long a confirmed cell lingers after it stops being
+seen scales with `clamp / |lMiss|`.)
+
+| Trust behaviour | Classes | Why (the data) |
+|---|---|---|
+| **Believe on the 1st frame, and linger ~1 s after it vanishes** | Pothole, Stairs, Obstacle | Low recall (0.30–0.62) **but almost never faked** ⇒ a sighting is trustworthy *and* a miss carries little information (we miss these anyway), so we don't forget them. |
+| **Believe on the 1st frame, but forget quickly once gone** | Crosswalk, Traffic-light, Traffic-sign, Over-bridge, Railway, Road-barrier, Train, Animal, Tree, Sidewalk, Person | Reliably seen (0.76–0.92) **and** rarely faked ⇒ trust a sighting; a miss genuinely means it left the frame. |
+| **Demand 2–3 consistent frames before believing** | **Pole, Vehicle** | High recall, **but hallucinated constantly** (Pole 580, Vehicle 642 background FPs) ⇒ `lHit` is small (0.42 / 0.25), so isolated detections never confirm; only persistence does. |
+
+**Headline:** only **Pole and Vehicle** require persistence — they are the *only* two classes the
+detector cries wolf about. Everything else is believed on sight, and the dangerous-but-flickery
+hazards (Pothole, Stairs) are the ones we deliberately *refuse to forget*.
+
+### 11.2 Decision 2 — how important it is to announce (assigned, safety)
+
+| Tier | Severity weight | Classes | Why this tier |
+|---|---|---|---|
+| **1 — announce eagerly, may preempt the cadence** | 1.0 | Pothole, Stairs, Pole, Road-barrier, Vehicle, Train, Animal, Obstacle | **Things that physically hurt you**: trip/fall (pothole, stairs), collision (pole, barrier), moving/dangerous (vehicle, train, animal), plus the generic catch-all. |
+| **2 — only when close or approaching** | 0.5 | Tree, Person, Over-bridge, Railway | Real but **usually avoidable, or too common to announce constantly** — Person especially, where proximity-gating prevents a crowd becoming "person… person… person." |
+| **3 — context, near-silent / on-demand** | 0.15 | Sidewalk, Crosswalk, Traffic-light, Traffic-sign | **Navigation context, not obstacles** — you don't collide with a crosswalk. Surfaced on "what's ahead?" or a transition, never nagged. |
+
+Tier is **human judgment about danger**, not data. The defensible boundary: *importance is a safety
+decision; trust is a data decision.*
+
+### 11.3 The combination — four worked examples
+
+| Class | Believe (L1) | Announce (L2) | Resulting behaviour |
+|---|---|---|---|
+| **Pothole** | instantly, lingers | Tier 1 | Announced on first glimpse *despite the model missing ~70% of them*. **The core safety win.** |
+| **Pole** | needs ~3 frames | Tier 1 | Important, but we wait so we don't shout at 580 phantom poles. |
+| **Crosswalk** | instantly | Tier 3 | We *know* it's there, but stay quiet — it's context. |
+| **Person** | instantly | Tier 2 | Seen fine, but spoken only when close — otherwise "person" non-stop. |
+
+### 11.4 One-sentence version (for the thesis / defense)
+
+> Each obstacle class is governed by two independent numbers — one the model **earns** (how reliably
+> it detects that class, read from the confusion matrix) and one we **assign** (how much a blind
+> pedestrian needs to hear about it). Trust comes from data; importance comes from safety; separating
+> them is what lets a rarely-detected pothole stay loud while a constantly-detected sidewalk stays
+> silent.
+
+---
+
+## 12. References
 
 - A. Wald, *Sequential Analysis*, 1947 (the SPRT — the optimal sequential test M-of-N approximates).
 - S. Blackman & R. Popoli, *Design and Analysis of Modern Tracking Systems*, 1999 (M-of-N track
