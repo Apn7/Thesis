@@ -3,28 +3,30 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:ultralytics_yolo/ultralytics_yolo.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/vision_strings.dart';
 import '../../services/detection_models.dart';
 import '../../services/pi_frame_server.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
 import '../widgets/detection_list_tile.dart';
 
-/// Cane-camera vision: frames arrive from the Raspberry Pi over WiFi (via
-/// [PiFrameServer]) and are run through the bundled YOLO using the plugin's
-/// still-image [YOLO.predict] API.
+/// Cane-camera vision debug view — a **pure viewer of [SensorFusionService]**.
 ///
-/// Why not [YOLOView]? That widget is a native CameraX platform view with no
-/// external-frame input — it can only see the phone's own camera. The Pi path
-/// needs to feed *our* JPEG bytes in, which only `YOLO.predict(bytes)`
-/// supports. It's slower than the native camera pipeline, but per the plan a
-/// "usable for a blind user" cadence is enough; we don't target a fixed FPS.
+/// Fusion is the single, always-on inference pipeline (it runs on `HomeScreen`
+/// so the blind user never has to open this screen). This screen used to run a
+/// *second* [YOLO] instance of its own, which meant two models loaded and two
+/// inferences per frame whenever Cane Cam was open — double the GPU work and
+/// halved FPS. It now renders exactly what fusion already computed: fusion
+/// publishes the JPEG it ran inference on plus that frame's detections, and we
+/// decode + overlay that aligned pair. One pipeline, one source of truth — the
+/// numbers here match the on-screen fusion debug panel.
 ///
-/// The existing phone-camera [VisionDemoScreen] is intentionally left
-/// untouched — this is a parallel screen.
+/// We never run inference and never touch the frame socket (fusion owns the
+/// [PiFrameServer] reference). The phone-camera [VisionDemoScreen] is unrelated
+/// and left untouched.
 class PiVisionScreen extends StatefulWidget {
   const PiVisionScreen({super.key});
 
@@ -34,91 +36,40 @@ class PiVisionScreen extends StatefulWidget {
 
 class _PiVisionScreenState extends State<PiVisionScreen>
     with WidgetsBindingObserver {
-  // Kept identical to VisionDemoScreen so detections stay comparable across
-  // the phone-camera and cane-camera paths.
-  static const double _confidenceThreshold = 0.25;
-  static const double _iouThreshold = 0.45;
+  final SensorFusionService _fusion = SensorFusionService.instance;
 
-  late final PiFrameServer _server;
-  late final YOLO _yolo;
-
-  bool _modelReady = false;
-  String? _modelError;
-
-  /// True while a [YOLO.predict] is in flight. The frame server can deliver
-  /// faster than inference runs, so we process one frame at a time and let the
-  /// rest be superseded — never building a backlog.
-  bool _busy = false;
-
-  /// Suspended while the app is backgrounded (saves battery; the socket stays
-  /// open so the Pi doesn't have to redial on a brief switch-away).
-  bool _paused = false;
-
-  /// [PiFrameServer.frameId] of the frame we last *attempted* (success or
-  /// failure), so we don't reprocess it.
-  int _lastProcessedId = -1;
-
-  // Current render frame: decoded image + its detections, painted together so
-  // boxes always line up with the pixels they were computed from.
+  /// Current render frame: decoded image + the detections that belong to it,
+  /// captured together so the boxes always line up with the pixels.
   ui.Image? _renderImage;
   List<Detection> _detections = const [];
 
-  // Metrics
-  double _latencyMs = 0;
-  double _fps = 0;
-  int _lastDoneAtMs = 0;
-  int _errorCount = 0;
+  /// Single-inflight decode guard: fusion can publish faster than a JPEG
+  /// decodes, so we decode one frame at a time and let the rest be superseded
+  /// (newest-frame-wins) — never building a backlog.
+  bool _decoding = false;
+
+  /// Suspended while the app is backgrounded — we just stop *decoding for
+  /// display*; fusion keeps running underneath on HomeScreen.
+  bool _paused = false;
+
+  /// Fusion frame id we last decoded, so we never redo the same frame.
+  int _lastDecodedId = -1;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // Shared, reference-counted singleton — the always-on SensorFusionService
-    // may already be streaming from it. We attach a listener and start() (bumps
-    // the consumer count); stop() in dispose() releases our reference without
-    // tearing down the socket if fusion is still using it.
-    _server = PiFrameServer.instance..addListener(_onServerUpdate);
-    _yolo = YOLO(
-      modelPath: 'assets/models/${ModelVariant.fp16.assetFile}',
-      task: YOLOTask.detect,
-      useGpu: true,
-      // Own channel so this instance never collides with VisionDemoScreen's
-      // default-channel YOLOView if both happen to be alive.
-      useMultiInstance: true,
-    );
-    _init();
-  }
-
-  Future<void> _init() async {
-    // Load the model and bind the socket in parallel.
-    final loadModel = _yolo
-        .loadModel()
-        .then((ok) {
-          if (!mounted) return;
-          setState(() {
-            _modelReady = ok;
-            if (!ok) _modelError = 'Model failed to load.';
-          });
-        })
-        .catchError((Object e) {
-          debugPrint('PiVisionScreen: model load failed — $e');
-          if (mounted) setState(() => _modelError = '$e');
-        });
-    await Future.wait([loadModel, _server.start()]);
-    // A frame may already be waiting if the Pi connected during model load.
-    unawaited(_maybeProcess());
+    _fusion.addListener(_onFusionUpdate);
+    // Fusion may already be mid-stream — render the current frame immediately.
+    _maybeDecode();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _server.removeListener(_onServerUpdate);
-    // Release our reference (does NOT close the socket if fusion still holds
-    // a reference). Never dispose() — it's a shared singleton.
-    _server.stop();
+    _fusion.removeListener(_onFusionUpdate);
+    // Never dispose the fusion singleton — HomeScreen owns its lifecycle.
     _renderImage?.dispose();
-    // YOLO holds native resources; release them.
-    _yolo.dispose();
     super.dispose();
   }
 
@@ -129,70 +80,52 @@ class _PiVisionScreenState extends State<PiVisionScreen>
         state != AppLifecycleState.inactive;
     if (paused == _paused) return;
     _paused = paused;
-    if (!_paused) _maybeProcess(); // resume the loop
+    if (!_paused) _maybeDecode(); // resume rendering
   }
 
-  // ── Frame pipeline ────────────────────────────────────────────────────
+  // ── Render pipeline (decode only — NO inference here) ──────────────────
 
-  void _onServerUpdate() {
+  void _onFusionUpdate() {
     if (!mounted) return;
-    // Reflect connection-state/error changes in the UI...
+    // Refresh metrics/connection state every notify (cheap), and decode the
+    // newly-published frame for the overlay (async, single-inflight).
     setState(() {});
-    // ...and try to process any newly-arrived frame.
-    _maybeProcess();
+    _maybeDecode();
   }
 
-  Future<void> _maybeProcess() async {
-    if (!mounted || _paused || _busy || !_modelReady) return;
-    if (_server.frameId == _lastProcessedId) return; // nothing new
-    final frame = _server.latestFrame;
-    if (frame == null) return;
+  Future<void> _maybeDecode() async {
+    if (!mounted || _paused || _decoding) return;
+    final fid = _fusion.latestProcessedFrameId;
+    if (fid == _lastDecodedId) return; // nothing new
+    final jpeg = _fusion.latestProcessedJpeg;
+    if (jpeg == null) return;
+    // Snapshot the detections synchronously with the jpeg/id above (no await
+    // between these reads, so they're a consistent same-frame pair).
+    final dets = _fusion.latestDetections;
 
-    _busy = true;
-    // Mark attempted up-front so a frame that fails to decode/infer isn't
-    // retried in a tight loop — we move on when the next frame arrives.
-    _lastProcessedId = _server.frameId;
-
+    _decoding = true;
+    _lastDecodedId = fid;
     try {
-      final sw = Stopwatch()..start();
-      final image = await _decode(frame);
-      final result = await _yolo.predict(
-        frame,
-        confidenceThreshold: _confidenceThreshold,
-        iouThreshold: _iouThreshold,
-      );
-      sw.stop();
-
+      final image = await _decode(jpeg);
       if (!mounted) {
         image.dispose();
         return;
       }
-
-      final dets = _parseDetections(result);
-      final now = DateTime.now().millisecondsSinceEpoch;
-      final dt = _lastDoneAtMs == 0 ? 0 : now - _lastDoneAtMs;
-      _lastDoneAtMs = now;
-
       setState(() {
         _renderImage?.dispose();
         _renderImage = image;
         _detections = dets;
-        _latencyMs = sw.elapsedMilliseconds.toDouble();
-        if (dt > 0) {
-          final inst = 1000.0 / dt;
-          // Light EMA so the readout doesn't jitter.
-          _fps = _fps == 0 ? inst : (_fps * 0.7 + inst * 0.3);
-        }
       });
     } on Object catch (e) {
-      _errorCount++;
-      debugPrint('PiVisionScreen: frame inference failed (#$_errorCount) — $e');
+      debugPrint('PiVisionScreen: frame decode failed — $e');
     } finally {
-      _busy = false;
-      // A newer frame may have landed mid-inference — pick it up. Microtask
+      _decoding = false;
+      // A newer frame may have arrived mid-decode — pick it up. Microtask
       // avoids unbounded recursion on a fast stream.
-      if (mounted && !_paused && _server.frameId != _lastProcessedId) {
-        scheduleMicrotask(_maybeProcess);
+      if (mounted &&
+          !_paused &&
+          _fusion.latestProcessedFrameId != _lastDecodedId) {
+        scheduleMicrotask(_maybeDecode);
       }
     }
   }
@@ -202,32 +135,6 @@ class _PiVisionScreenState extends State<PiVisionScreen>
     final frame = await codec.getNextFrame();
     codec.dispose();
     return frame.image;
-  }
-
-  List<Detection> _parseDetections(Map<String, dynamic> result) {
-    final raw = result['detections'];
-    if (raw is! List) return const [];
-    final out = <Detection>[];
-    for (final item in raw) {
-      if (item is! Map) continue;
-      final r = YOLOResult.fromMap(item);
-      out.add(
-        Detection(
-          classId: r.classIndex,
-          label: r.className,
-          confidence: r.confidence,
-          // normalizedBox is 0..1 relative to the source frame — exactly what
-          // BBox and the overlay painter expect.
-          bbox: BBox(
-            r.normalizedBox.left,
-            r.normalizedBox.top,
-            r.normalizedBox.right,
-            r.normalizedBox.bottom,
-          ),
-        ),
-      );
-    }
-    return out;
   }
 
   // ── UI ────────────────────────────────────────────────────────────────
@@ -260,7 +167,6 @@ class _PiVisionScreenState extends State<PiVisionScreen>
       ),
       body: Column(
         children: [
-          if (_modelError != null) _buildBanner(_modelError!),
           _buildMetricsRow(),
           Expanded(flex: 3, child: _buildViewport(useBn)),
           const Divider(height: 1),
@@ -271,18 +177,30 @@ class _PiVisionScreenState extends State<PiVisionScreen>
   }
 
   Widget _buildViewport(bool useBn) {
-    if (_server.state == PiServerState.error) {
+    // Fusion is the source of truth; if it isn't running there's nothing to
+    // show. In our system fusion is always on, so this is a safety net.
+    if (!AppConstants.enableSensorFusion || !_fusion.isRunning) {
+      return _buildStatusView(
+        icon: Icons.sensors_off,
+        color: AppColors.warning,
+        titleBn: VisionStrings.piFusionOffBn,
+        titleEn: VisionStrings.piFusionOffEn,
+        detailBn: VisionStrings.piFusionOffHintBn,
+        detailEn: VisionStrings.piFusionOffHintEn,
+      );
+    }
+    if (PiFrameServer.instance.state == PiServerState.error) {
       return _buildStatusView(
         icon: Icons.wifi_off,
         color: AppColors.error,
         titleBn: VisionStrings.piServerErrorBn,
         titleEn: VisionStrings.piServerErrorEn,
-        detail: _server.errorMessage,
+        detail: PiFrameServer.instance.errorMessage,
       );
     }
     final image = _renderImage;
     if (image == null) {
-      // Connected or still waiting — either way nothing to draw yet.
+      // Fusion running but no frame decoded yet — still connecting/warming up.
       return _buildStatusView(
         icon: Icons.videocam_outlined,
         color: AppColors.textSecondary,
@@ -304,6 +222,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
   }
 
   Widget _buildMetricsRow() {
+    // These come straight from fusion, so they match the fusion debug panel.
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: AppConstants.spacingM,
@@ -314,10 +233,10 @@ class _PiVisionScreenState extends State<PiVisionScreen>
         children: [
           _chip(
             VisionStrings.latencyLabelEn,
-            '${_latencyMs.toStringAsFixed(0)} ms',
+            '${_fusion.latencyMs.toStringAsFixed(0)} ms',
           ),
-          _chip(VisionStrings.fpsLabelEn, _fps.toStringAsFixed(1)),
-          _chip('Frames', '${_server.framesReceived}'),
+          _chip(VisionStrings.fpsLabelEn, _fusion.fps.toStringAsFixed(1)),
+          _chip('Frames', '${_fusion.framesProcessed}'),
         ],
       ),
     );
@@ -397,34 +316,6 @@ class _PiVisionScreenState extends State<PiVisionScreen>
               ).textTheme.bodySmall?.copyWith(color: Colors.white70),
             ),
           ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBanner(String msg) {
-    return Container(
-      width: double.infinity,
-      color: AppColors.error.withValues(alpha: 0.12),
-      padding: EdgeInsets.symmetric(
-        horizontal: AppConstants.spacingM,
-        vertical: AppConstants.spacingS,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.error_outline, color: AppColors.error, size: 18),
-          SizedBox(width: AppConstants.spacingS),
-          Expanded(
-            child: Text(
-              msg,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: AppColors.error),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
         ],
       ),
     );

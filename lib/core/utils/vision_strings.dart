@@ -78,6 +78,17 @@ class VisionStrings {
   static const String piServerErrorBn = 'ক্যামেরা সার্ভার চালু করা যায়নি।';
   static const String piServerErrorEn = 'Could not start the camera server.';
 
+  // Fusion-off state (Cane Cam mirrors the always-on fusion pipeline, so it has
+  // nothing to show if fusion isn't running — which shouldn't happen in normal
+  // use, but we surface it instead of a blank screen).
+  static const String piFusionOffBn = 'সেন্সর ফিউশন বন্ধ আছে।';
+  static const String piFusionOffEn = 'Sensor fusion is off.';
+
+  static const String piFusionOffHintBn =
+      'কেন ক্যাম ফিউশন থেকে ফ্রেম দেখায়; ফিউশন চালু থাকা প্রয়োজন।';
+  static const String piFusionOffHintEn =
+      'Cane Cam shows frames from fusion; fusion must be running.';
+
   // Home-screen entry tile
   static const String piTileLabelBn = 'কেন ক্যাম';
   static const String piTileLabelEn = 'Cane Cam';

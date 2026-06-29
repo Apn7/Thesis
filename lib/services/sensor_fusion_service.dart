@@ -87,11 +87,24 @@ class SensorFusionService extends ChangeNotifier {
   int _framesProcessed = 0;
   int _lastDoneAtMs = 0;
 
+  /// The exact JPEG bytes fusion last ran inference on, plus that frame's id.
+  /// Published so the Cane Cam viewer renders the *same* frame that
+  /// [latestDetections] belong to — drawing the live server frame against these
+  /// detections would misalign, since inference lags the newest frame. This is
+  /// the received JPEG held by reference (~16 KB); fusion never decodes it.
+  Uint8List? _latestProcessedJpeg;
+  int _latestProcessedFrameId = -1;
+
   bool get isRunning => _running;
   bool get modelReady => _modelReady;
 
   /// Most recent frame's raw detections (pre-confirmation).
   List<Detection> get latestDetections => _latestDetections;
+
+  /// The JPEG bytes [latestDetections] were computed from, and that frame's id,
+  /// so a viewer can render an aligned frame+boxes pair.
+  Uint8List? get latestProcessedJpeg => _latestProcessedJpeg;
+  int get latestProcessedFrameId => _latestProcessedFrameId;
 
   /// The confirmed (majority-vote) object label per zone, or null if none.
   /// Center may be the sentinel `__obstacle__` for the sonar-only fallback.
@@ -168,6 +181,8 @@ class SensorFusionService extends ChangeNotifier {
     _window.clear();
     _resetAnnouncementState();
     _latestDetections = const [];
+    _latestProcessedJpeg = null;
+    _latestProcessedFrameId = -1;
     _confirmedCenter = _confirmedLeft = _confirmedRight = null;
     _lastAnnouncement = '';
     _latencyMs = 0;
@@ -220,6 +235,11 @@ class SensorFusionService extends ChangeNotifier {
       }
       _framesProcessed++;
 
+      // Publish the exact frame these detections came from so the Cane Cam
+      // viewer renders an aligned frame+boxes pair (it lags the live server
+      // frame otherwise). Reference only — no copy, no decode.
+      _latestProcessedJpeg = frame;
+      _latestProcessedFrameId = _lastProcessedId;
       onNewFrame(_parseDetections(result));
     } on Object catch (e) {
       debugPrint('SensorFusionService: inference failed — $e');
