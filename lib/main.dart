@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -14,17 +12,17 @@ import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/vision_demo_screen.dart';
 import 'presentation/screens/pi_vision_screen.dart';
 import 'services/hardware_key_service.dart';
-import 'services/stt/stt_engine_factory.dart';
 import 'services/voice_navigation_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialise sherpa-onnx native bindings, then pre-warm the offline Bengali
-  // STT model (copy ~91 MB from assets + load the recognizer) in the
-  // background so the first push-to-talk isn't blocked on a cold model load.
+  // Initialise sherpa-onnx native bindings. The (heavy, ~91 MB) model load is
+  // deliberately NOT started here — it runs in SplashScreen's _initServices,
+  // *after* the permission prompt, so loading the recognizer never delays the
+  // first frame or the permission dialog. By the time Home is shown the model
+  // is ready, so the first push-to-talk is still instant.
   sherpa.initBindings();
-  unawaited(SttEngineFactory.getEngine('bn').initialize());
 
   // Load environment variables from .env
   await dotenv.load(fileName: ".env");

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -105,11 +107,16 @@ class _SplashScreenState extends State<SplashScreen>
     // Hybrid model: the OS permission dialog can only be read and operated by
     // a screen reader (TalkBack) or a sighted helper — an app cannot accept it
     // itself.  With no screen reader running, the user can't see or hear the
-    // dialog, so speak an instruction with our own TTS first.
+    // dialog, so speak an instruction with our own TTS.  Fire-and-forget so the
+    // dialog appears immediately and the instruction plays *alongside* it —
+    // awaiting it (now that TTS awaits completion) would delay the prompt by the
+    // whole sentence.
     if (!VoiceAnnouncer.screenReaderOn) {
-      await TtsService.instance.speak(
-        'স্মার্ট ক্যানের কিছু অনুমতি প্রয়োজন। অনুমতি দিতে টকব্যাক চালু করুন, '
-        'অথবা চোখে দেখেন এমন কারও সাহায্য নিন।',
+      unawaited(
+        TtsService.instance.speak(
+          'স্মার্ট ক্যানের কিছু অনুমতি প্রয়োজন। অনুমতি দিতে টকব্যাক চালু করুন, '
+          'অথবা চোখে দেখেন এমন কারও সাহায্য নিন।',
+        ),
       );
     }
 
@@ -135,8 +142,10 @@ class _SplashScreenState extends State<SplashScreen>
       // TalkBack reads this dialog itself; if it's off, speak it so a blind
       // user isn't stranded at a silent dialog.
       if (!VoiceAnnouncer.screenReaderOn) {
-        await TtsService.instance.speak(
-          'কিছু অনুমতি বন্ধ আছে। অনুগ্রহ করে সেটিংসে গিয়ে অনুমতি দিন।',
+        unawaited(
+          TtsService.instance.speak(
+            'কিছু অনুমতি বন্ধ আছে। অনুগ্রহ করে সেটিংসে গিয়ে অনুমতি দিন।',
+          ),
         );
       }
 
