@@ -1,14 +1,24 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../services/detection_models.dart';
 import '../../services/distance_alert_source.dart';
+import '../../services/fusion/track.dart';
 import '../../services/sensor_fusion_service.dart';
 
 /// On-screen debug panel for the [SensorFusionService]: shows exactly what the
-/// fusion layer is detecting, what it has *confirmed* per zone, the live sonar
+/// fusion layer is detecting, what it has *confirmed*, the live sonar
 /// distance/verdict, and the last utterance it spoke.
+///
+/// It renders one of two layouts depending on the active fusion path:
+///  * **Bayesian (v2, default):** per-track existence probability, severity
+///    tier, proximity, looming and the scheduler's utility score — i.e. *why*
+///    each track did or didn't earn the audio channel (FUSION_REDESIGN.md).
+///  * **Legacy vote:** the old 3-of-5 sliding-window confirmed-per-zone view,
+///    kept for A/B comparison when `fusionUseBayesian` is false.
 ///
 /// This is a developer aid (the blind user relies on voice). It rebuilds at the
 /// fusion frame rate, so it's wrapped in its own [ListenableBuilder] and kept
@@ -25,6 +35,7 @@ class FusionDebugCard extends StatelessWidget {
         final dets = fusion.latestDetections;
         final distCm = fusion.latestDistanceCm;
         final verdict = fusion.verdict;
+        final bayes = fusion.usingBayesian;
 
         return Card(
           elevation: 4,
@@ -43,11 +54,14 @@ class FusionDebugCard extends StatelessWidget {
               children: [
                 _header(context, fusion),
                 const Divider(height: 16),
-                _metricsRow(context, fusion),
+                bayes ? _metricsRowV2(context, fusion) : _metricsRow(fusion),
                 SizedBox(height: AppConstants.spacingS),
                 _distanceRow(context, distCm, verdict),
                 SizedBox(height: AppConstants.spacingS),
-                _confirmedZones(context, fusion, distCm),
+                if (bayes)
+                  _tracksList(context, fusion)
+                else
+                  _confirmedZones(context, fusion, distCm),
                 SizedBox(height: AppConstants.spacingS),
                 _lastAnnouncement(context, fusion),
                 const Divider(height: 16),
@@ -80,6 +94,13 @@ class FusionDebugCard extends StatelessWidget {
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
+        // Which fusion brain is live, so the panel is never read against the
+        // wrong mental model.
+        _pill(
+          fusion.usingBayesian ? 'BAYES' : 'VOTE',
+          fusion.usingBayesian ? AppColors.primary : AppColors.textSecondary,
+        ),
+        SizedBox(width: AppConstants.spacingXs),
         _pill(
           fusion.modelReady ? 'MODEL OK' : 'MODEL…',
           fusion.modelReady ? AppColors.success : AppColors.warning,
@@ -88,7 +109,176 @@ class FusionDebugCard extends StatelessWidget {
     );
   }
 
-  Widget _metricsRow(BuildContext context, SensorFusionService fusion) {
+  // ── v2 (Bayesian) metrics + track list ────────────────────────────────
+
+  Widget _metricsRowV2(BuildContext context, SensorFusionService fusion) {
+    return Wrap(
+      spacing: AppConstants.spacingS,
+      runSpacing: AppConstants.spacingXs,
+      children: [
+        _stat('FPS', fusion.fps.toStringAsFixed(1)),
+        _stat('Latency', '${fusion.latencyMs.toStringAsFixed(0)} ms'),
+        _stat('Frames', '${fusion.framesProcessed}'),
+        _stat('Tracks', '${fusion.confirmedTracks.length}'),
+      ],
+    );
+  }
+
+  Widget _tracksList(BuildContext context, SensorFusionService fusion) {
+    final tracks = fusion.confirmedTracks;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Confirmed tracks · P(exists) ≥ ${_sigmoid(AppConstants.fusionConfirmLogOdds).toStringAsFixed(2)}',
+          style: Theme.of(
+            context,
+          ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+        ),
+        SizedBox(height: AppConstants.spacingXs),
+        if (tracks.isEmpty)
+          Text(
+            'none confirmed',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
+          )
+        else
+          ...tracks.map((t) => _trackRow(context, fusion, t)),
+      ],
+    );
+  }
+
+  Widget _trackRow(BuildContext context, SensorFusionService fusion, Track t) {
+    final picked = fusion.wasPicked(t);
+    final utility = fusion.utilityFor(t);
+    final looming = t.areaTrend > 0.15;
+    final live = t.seenThisFrame;
+    final name = t.label == '__obstacle__' ? 'obstacle (sonar)' : t.label;
+
+    // Sub-line: the scheduler inputs that decided whether this track spoke.
+    final facts = <String>[
+      'P ${(t.existence * 100).toStringAsFixed(0)}%',
+      'prox ${t.proximity.toStringAsFixed(2)}',
+      if (t.distanceCm != null) '${(t.distanceCm! / 100).toStringAsFixed(1)} m',
+      if (looming) '↑ looming',
+      'U ${utility.toStringAsFixed(2)}',
+    ];
+
+    return Container(
+      margin: EdgeInsets.only(bottom: AppConstants.spacingXs),
+      padding: EdgeInsets.symmetric(
+        horizontal: AppConstants.spacingS,
+        vertical: AppConstants.spacingXs,
+      ),
+      decoration: BoxDecoration(
+        color: picked
+            ? AppColors.accent.withValues(alpha: 0.14)
+            : AppColors.primaryLight.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppConstants.radiusS),
+        border: picked
+            ? Border.all(color: AppColors.accent.withValues(alpha: 0.6))
+            : null,
+      ),
+      child: Opacity(
+        // Lingering (not-this-frame) tracks are memory only — dim them.
+        opacity: live ? 1.0 : 0.55,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _zoneTag(t.zone),
+                SizedBox(width: AppConstants.spacingS),
+                _tierChip(t.tier),
+                SizedBox(width: AppConstants.spacingS),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (picked)
+                  Icon(
+                    Icons.volume_up,
+                    size: AppConstants.iconS,
+                    color: AppColors.accentDark,
+                  )
+                else if (!live)
+                  Text(
+                    'mem',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+              ],
+            ),
+            SizedBox(height: AppConstants.spacingXs / 2),
+            _existenceBar(t.existence, t.tier),
+            SizedBox(height: AppConstants.spacingXs / 2),
+            Text(
+              facts.join('  ·  '),
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A slim existence-probability bar, coloured by severity tier.
+  Widget _existenceBar(double p, int tier) {
+    final color = _tierColor(tier);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(3),
+      child: LinearProgressIndicator(
+        value: p.clamp(0.0, 1.0),
+        minHeight: 5,
+        backgroundColor: color.withValues(alpha: 0.15),
+        valueColor: AlwaysStoppedAnimation<Color>(color),
+      ),
+    );
+  }
+
+  Widget _tierChip(int tier) {
+    final color = _tierColor(tier);
+    final label = switch (tier) {
+      1 => 'T1·hazard',
+      2 => 'T2·near',
+      _ => 'T3·context',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(AppConstants.radiusS),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: color,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
+  Color _tierColor(int tier) => switch (tier) {
+    1 => AppColors.error,
+    2 => AppColors.warning,
+    _ => AppColors.textSecondary,
+  };
+
+  // ── Legacy (vote) metrics + confirmed-per-zone ────────────────────────
+
+  Widget _metricsRow(SensorFusionService fusion) {
     return Wrap(
       spacing: AppConstants.spacingS,
       runSpacing: AppConstants.spacingXs,
@@ -359,4 +549,7 @@ class FusionDebugCard extends StatelessWidget {
         return AppColors.textSecondary;
     }
   }
+
+  /// Logistic, to render the confirm threshold as a probability in the header.
+  static double _sigmoid(double x) => 1 / (1 + math.exp(-x));
 }

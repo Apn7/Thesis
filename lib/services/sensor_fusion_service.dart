@@ -90,6 +90,12 @@ class SensorFusionService extends ChangeNotifier {
   String? _confirmedCenter; // raw English label, or '__obstacle__', or null
   String? _confirmedLeft;
   String? _confirmedRight;
+
+  /// v2 debug snapshot: every confirmed [Track] this frame (fresh ones carry
+  /// proximity/distance/looming; lingering ones are flagged via
+  /// [Track.seenThisFrame]). Drives the Bayesian fusion debug panel. Empty on
+  /// the legacy vote path.
+  List<Track> _confirmedTracks = const [];
   String _lastAnnouncement = '';
   double _latencyMs = 0;
   double _fps = 0;
@@ -120,6 +126,24 @@ class SensorFusionService extends ChangeNotifier {
   String? get confirmedCenter => _confirmedCenter;
   String? get confirmedLeft => _confirmedLeft;
   String? get confirmedRight => _confirmedRight;
+
+  /// v2: the confirmed tracks the existence filter is currently holding, with
+  /// their enrichment (existence, tier, proximity, looming, distance). For the
+  /// Bayesian debug panel. Empty when on the legacy vote path.
+  List<Track> get confirmedTracks => _confirmedTracks;
+
+  /// v2 debug: the scheduler's utility score for [t] this cycle (0 if it wasn't
+  /// a candidate — e.g. a lingering, not-seen-this-frame track).
+  double utilityFor(Track t) =>
+      _scheduler.lastUtilities['${t.label}:${t.zone.index}'] ?? 0.0;
+
+  /// v2 debug: whether [t] was one of the tracks the scheduler chose to speak
+  /// this cycle (i.e. it won the perception-bandwidth channel).
+  bool wasPicked(Track t) =>
+      _scheduler.lastPicks.any((p) => p.label == t.label && p.zone == t.zone);
+
+  /// True when the active fusion path is the v2 Bayesian existence filter.
+  bool get usingBayesian => AppConstants.fusionUseBayesian;
 
   /// The last utterance fused-speech actually sent to TTS (for debugging).
   String get lastAnnouncement => _lastAnnouncement;
@@ -195,6 +219,7 @@ class SensorFusionService extends ChangeNotifier {
     _latestProcessedJpeg = null;
     _latestProcessedFrameId = -1;
     _confirmedCenter = _confirmedLeft = _confirmedRight = null;
+    _confirmedTracks = const [];
     _lastAnnouncement = '';
     _latencyMs = 0;
     _fps = 0;
@@ -543,6 +568,20 @@ class SensorFusionService extends ChangeNotifier {
     _confirmedCenter = center;
     _confirmedLeft = left;
     _confirmedRight = right;
+
+    // Full track snapshot for the debug panel: every confirmed cell plus the
+    // synthetic sonar-only obstacle (which lives in [fresh], not [confirmed]).
+    // Fresh-this-frame tracks first, then by existence — so the panel reads
+    // top-down from "what's live right now" to "what's lingering in memory".
+    final snap = <Track>[
+      ...confirmed,
+      ...fresh.where((t) => t.label == '__obstacle__'),
+    ];
+    snap.sort((a, b) {
+      if (a.seenThisFrame != b.seenThisFrame) return a.seenThisFrame ? -1 : 1;
+      return b.existence.compareTo(a.existence);
+    });
+    _confirmedTracks = snap;
   }
 
   /// Order picks center → left → right for a natural single utterance.

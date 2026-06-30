@@ -19,17 +19,32 @@ class AnnouncementScheduler {
   final Map<String, DateTime> _lastSpoken = {};
   DateTime _bucketRefill = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// Debug-only: the utility scored for every candidate this cycle (keyed
+  /// `"label:zoneIndex"`), **including** ones below the floor. Lets the on-screen
+  /// panel explain why a track did or didn't earn the channel. Not used by the
+  /// audio logic.
+  final Map<String, double> lastUtilities = {};
+
+  /// Debug-only: the tracks actually selected to speak this cycle (`[]` if the
+  /// scheduler stayed silent — rate-limited, below floor, or nothing fresh).
+  List<Track> lastPicks = const [];
+
   void reset() {
     _lastSpoken.clear();
     _bucketRefill = DateTime.fromMillisecondsSinceEpoch(0);
+    lastUtilities.clear();
+    lastPicks = const [];
   }
 
   /// The tracks to speak this cycle (caller orders the utterance), or `[]` to
   /// stay silent. [tracks] should be the fresh confirmed tracks.
   List<Track> select(List<Track> tracks, {required DateTime now}) {
+    lastUtilities.clear();
+    lastPicks = const [];
     final scored = <(Track, double)>[];
     for (final t in tracks) {
       final u = _utility(t, now);
+      lastUtilities['${t.label}:${t.zone.index}'] = u;
       if (u >= AppConstants.fusionUtilityFloor) scored.add((t, u));
     }
     if (scored.isEmpty) return const [];
@@ -59,6 +74,7 @@ class AnnouncementScheduler {
     for (final p in picks) {
       _lastSpoken['${p.label}:${p.zone.index}'] = now;
     }
+    lastPicks = picks;
     return picks;
   }
 
