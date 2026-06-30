@@ -6,7 +6,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/vision_strings.dart';
 import '../../services/detection_models.dart';
-import '../../services/settings_service.dart';
 import '../widgets/detection_list_tile.dart';
 
 /// Vision Demo screen — live camera → YOLOv11n → native bbox overlay + list.
@@ -161,36 +160,22 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final useBn = SettingsService.instance.languageMode == 'bn';
     return Scaffold(
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: useBn
-              ? VisionStrings.screenSemanticBn
-              : VisionStrings.screenSemanticEn,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(VisionStrings.screenTitleBn),
-              Text(
-                VisionStrings.screenTitleEn,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
-          ),
+          label: VisionStrings.screenSemantic,
+          child: const Text(VisionStrings.screenTitle),
         ),
         centerTitle: true,
         elevation: 0,
       ),
-      body: _buildBody(useBn),
+      body: _buildBody(),
     );
   }
 
-  Widget _buildBody(bool useBn) {
-    if (_checkingPermission) return _buildLoadingView(useBn);
+  Widget _buildBody() {
+    if (_checkingPermission) return _buildLoadingView();
     if (_permissionDenied) return _buildPermissionDeniedView();
     return Column(
       children: [
@@ -198,7 +183,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
         _buildToggleRow(),
         Expanded(flex: 3, child: _buildCameraView()),
         const Divider(height: 1),
-        Expanded(flex: 2, child: _buildDetectionsList(useBn)),
+        Expanded(flex: 2, child: _buildDetectionsList()),
       ],
     );
   }
@@ -221,16 +206,14 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
     );
   }
 
-  Widget _buildLoadingView(bool useBn) {
+  Widget _buildLoadingView() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const CircularProgressIndicator(),
           SizedBox(height: AppConstants.spacingL),
-          Text(
-            useBn ? VisionStrings.loadingModelBn : VisionStrings.loadingModelEn,
-          ),
+          const Text(VisionStrings.loadingModel),
         ],
       ),
     );
@@ -246,25 +229,15 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
             Icon(Icons.camera_alt_outlined, size: 64, color: AppColors.warning),
             SizedBox(height: AppConstants.spacingL),
             Text(
-              VisionStrings.permissionDeniedBn,
+              VisionStrings.permissionDenied,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.titleMedium,
-            ),
-            SizedBox(height: AppConstants.spacingS),
-            Text(
-              VisionStrings.permissionDeniedEn,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             ),
             SizedBox(height: AppConstants.spacingL),
             ElevatedButton.icon(
               onPressed: openAppSettings,
               icon: const Icon(Icons.settings),
-              label: Text(
-                '${VisionStrings.openSettingsBn} / ${VisionStrings.openSettingsEn}',
-              ),
+              label: const Text(VisionStrings.openSettings),
             ),
           ],
         ),
@@ -287,7 +260,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
           SizedBox(width: AppConstants.spacingS),
           Expanded(
             child: Text(
-              '${VisionStrings.modelMissingEn} $msg',
+              '${VisionStrings.modelMissing} $msg',
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: AppColors.error),
@@ -354,11 +327,11 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               _buildMetricChip(
-                VisionStrings.latencyLabelEn,
+                VisionStrings.latencyLabel,
                 '${_latencyMs.toStringAsFixed(0)} ms',
               ),
               _buildMetricChip(
-                VisionStrings.fpsLabelEn,
+                VisionStrings.fpsLabel,
                 _fps.toStringAsFixed(1),
               ),
             ],
@@ -400,7 +373,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
     );
   }
 
-  Widget _buildDetectionsList(bool useBn) {
+  Widget _buildDetectionsList() {
     final dets = _detections;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -413,9 +386,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
             AppConstants.spacingXs,
           ),
           child: Text(
-            useBn
-                ? VisionStrings.detectionsHeaderBn
-                : VisionStrings.detectionsHeaderEn,
+            VisionStrings.detectionsHeader,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w600,
@@ -426,9 +397,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
           child: dets.isEmpty
               ? Center(
                   child: Text(
-                    useBn
-                        ? VisionStrings.noDetectionsBn
-                        : VisionStrings.noDetectionsEn,
+                    VisionStrings.noDetections,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -438,7 +407,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
                   itemCount: dets.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) =>
-                      DetectionListTile(detection: dets[i], useBangla: useBn),
+                      DetectionListTile(detection: dets[i]),
                 ),
         ),
       ],

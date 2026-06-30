@@ -10,7 +10,6 @@ import '../../core/utils/vision_strings.dart';
 import '../../services/detection_models.dart';
 import '../../services/pi_frame_server.dart';
 import '../../services/sensor_fusion_service.dart';
-import '../../services/settings_service.dart';
 import '../widgets/detection_list_tile.dart';
 
 /// Cane-camera vision debug view — a **pure viewer of [SensorFusionService]**.
@@ -141,26 +140,12 @@ class _PiVisionScreenState extends State<PiVisionScreen>
 
   @override
   Widget build(BuildContext context) {
-    final useBn = SettingsService.instance.languageMode == 'bn';
     return Scaffold(
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: useBn
-              ? VisionStrings.piScreenSemanticBn
-              : VisionStrings.piScreenSemanticEn,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(VisionStrings.piScreenTitleBn),
-              Text(
-                VisionStrings.piScreenTitleEn,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
-          ),
+          label: VisionStrings.piScreenSemantic,
+          child: const Text(VisionStrings.piScreenTitle),
         ),
         centerTitle: true,
         elevation: 0,
@@ -168,33 +153,30 @@ class _PiVisionScreenState extends State<PiVisionScreen>
       body: Column(
         children: [
           _buildMetricsRow(),
-          Expanded(flex: 3, child: _buildViewport(useBn)),
+          Expanded(flex: 3, child: _buildViewport()),
           const Divider(height: 1),
-          Expanded(flex: 2, child: _buildDetectionsList(useBn)),
+          Expanded(flex: 2, child: _buildDetectionsList()),
         ],
       ),
     );
   }
 
-  Widget _buildViewport(bool useBn) {
+  Widget _buildViewport() {
     // Fusion is the source of truth; if it isn't running there's nothing to
     // show. In our system fusion is always on, so this is a safety net.
     if (!AppConstants.enableSensorFusion || !_fusion.isRunning) {
       return _buildStatusView(
         icon: Icons.sensors_off,
         color: AppColors.warning,
-        titleBn: VisionStrings.piFusionOffBn,
-        titleEn: VisionStrings.piFusionOffEn,
-        detailBn: VisionStrings.piFusionOffHintBn,
-        detailEn: VisionStrings.piFusionOffHintEn,
+        title: VisionStrings.piFusionOff,
+        detail: VisionStrings.piFusionOffHint,
       );
     }
     if (PiFrameServer.instance.state == PiServerState.error) {
       return _buildStatusView(
         icon: Icons.wifi_off,
         color: AppColors.error,
-        titleBn: VisionStrings.piServerErrorBn,
-        titleEn: VisionStrings.piServerErrorEn,
+        title: VisionStrings.piServerError,
         detail: PiFrameServer.instance.errorMessage,
       );
     }
@@ -204,10 +186,8 @@ class _PiVisionScreenState extends State<PiVisionScreen>
       return _buildStatusView(
         icon: Icons.videocam_outlined,
         color: AppColors.textSecondary,
-        titleBn: VisionStrings.piWaitingBn,
-        titleEn: VisionStrings.piWaitingEn,
-        detailBn: VisionStrings.piWaitingHintBn,
-        detailEn: VisionStrings.piWaitingHintEn,
+        title: VisionStrings.piWaiting,
+        detail: VisionStrings.piWaitingHint,
         showSpinner: true,
       );
     }
@@ -232,11 +212,11 @@ class _PiVisionScreenState extends State<PiVisionScreen>
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _chip(
-            VisionStrings.latencyLabelEn,
+            VisionStrings.latencyLabel,
             '${_fusion.latencyMs.toStringAsFixed(0)} ms',
           ),
-          _chip(VisionStrings.fpsLabelEn, _fusion.fps.toStringAsFixed(1)),
-          _chip('Frames', '${_fusion.framesProcessed}'),
+          _chip(VisionStrings.fpsLabel, _fusion.fps.toStringAsFixed(1)),
+          _chip('ফ্রেম', '${_fusion.framesProcessed}'),
         ],
       ),
     );
@@ -277,14 +257,10 @@ class _PiVisionScreenState extends State<PiVisionScreen>
   Widget _buildStatusView({
     required IconData icon,
     required Color color,
-    required String titleBn,
-    required String titleEn,
+    required String title,
     String? detail,
-    String? detailBn,
-    String? detailEn,
     bool showSpinner = false,
   }) {
-    final useBn = SettingsService.instance.languageMode == 'bn';
     return Container(
       color: Colors.black,
       width: double.infinity,
@@ -300,16 +276,16 @@ class _PiVisionScreenState extends State<PiVisionScreen>
             SizedBox(height: AppConstants.spacingM),
           ],
           Text(
-            useBn ? titleBn : titleEn,
+            title,
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
             ).textTheme.titleMedium?.copyWith(color: Colors.white),
           ),
-          if (detail != null || detailBn != null) ...[
+          if (detail != null) ...[
             SizedBox(height: AppConstants.spacingS),
             Text(
-              detail ?? (useBn ? detailBn! : detailEn!),
+              detail,
               textAlign: TextAlign.center,
               style: Theme.of(
                 context,
@@ -321,7 +297,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
     );
   }
 
-  Widget _buildDetectionsList(bool useBn) {
+  Widget _buildDetectionsList() {
     final dets = _detections;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -334,9 +310,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
             AppConstants.spacingXs,
           ),
           child: Text(
-            useBn
-                ? VisionStrings.detectionsHeaderBn
-                : VisionStrings.detectionsHeaderEn,
+            VisionStrings.detectionsHeader,
             style: Theme.of(context).textTheme.titleSmall?.copyWith(
               color: AppColors.textSecondary,
               fontWeight: FontWeight.w600,
@@ -347,9 +321,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
           child: dets.isEmpty
               ? Center(
                   child: Text(
-                    useBn
-                        ? VisionStrings.noDetectionsBn
-                        : VisionStrings.noDetectionsEn,
+                    VisionStrings.noDetections,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: AppColors.textSecondary,
                     ),
@@ -359,7 +331,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
                   itemCount: dets.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) =>
-                      DetectionListTile(detection: dets[i], useBangla: useBn),
+                      DetectionListTile(detection: dets[i]),
                 ),
         ),
       ],

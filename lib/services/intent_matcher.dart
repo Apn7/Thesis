@@ -222,8 +222,7 @@ class _IntentDef {
   final List<List<String>> phraseTokens; // post-stopword
   final List<Map<String, double>> phraseTfIdf; // sparse vectors
   final List<Set<String>> phraseBigrams;
-  final String responseBn;
-  final String responseEn;
+  final String response;
 
   _IntentDef({
     required this.action,
@@ -232,8 +231,7 @@ class _IntentDef {
     required this.phraseTokens,
     required this.phraseTfIdf,
     required this.phraseBigrams,
-    required this.responseBn,
-    required this.responseEn,
+    required this.response,
   });
 }
 
@@ -406,7 +404,7 @@ class IntentMatcher {
       for (final m in list) {
         final action = m['action'] as String;
         final phrases = (m['phrases'] as List).cast<String>();
-        final responses = m['responses'] as Map<String, dynamic>;
+        final response = m['response'] as String? ?? '';
         final normPhrases = phrases.map(_normalize).toList();
         final tokenLists = normPhrases
             .map(_tokenize)
@@ -421,8 +419,7 @@ class IntentMatcher {
             rawPhrases: phrases,
             normPhrases: normPhrases,
             tokenLists: tokenLists,
-            responseBn: responses['bn'] as String? ?? '',
-            responseEn: responses['en'] as String? ?? '',
+            response: response,
           ),
         );
       }
@@ -458,8 +455,7 @@ class IntentMatcher {
             phraseTokens: raw.tokenLists,
             phraseTfIdf: tfIdfs,
             phraseBigrams: bigrams,
-            responseBn: raw.responseBn,
-            responseEn: raw.responseEn,
+            response: raw.response,
           ),
         );
       }
@@ -549,14 +545,11 @@ class IntentMatcher {
     if (!accepted) return null;
 
     final intent = _intents.firstWhere((i) => i.action == top.action);
-    final response = _isMostlyBengali(text)
-        ? intent.responseBn
-        : intent.responseEn;
 
     return IntentMatch(
       action: top.action,
       confidence: top.ensembleScore,
-      spokenResponse: response,
+      spokenResponse: intent.response,
       codeMixingIndex: cmi,
     );
   }
@@ -820,8 +813,6 @@ class IntentMatcher {
     return false;
   }
 
-  bool _isMostlyBengali(String s) => _containsBengali(s);
-
   // ─────────────────────────────────────────────────────────────────────
   //  Normalisation + tokenisation
   // ─────────────────────────────────────────────────────────────────────
@@ -855,14 +846,12 @@ class _IntentRaw {
   final List<String> rawPhrases;
   final List<String> normPhrases;
   final List<List<String>> tokenLists;
-  final String responseBn;
-  final String responseEn;
+  final String response;
   _IntentRaw({
     required this.action,
     required this.rawPhrases,
     required this.normPhrases,
     required this.tokenLists,
-    required this.responseBn,
-    required this.responseEn,
+    required this.response,
   });
 }

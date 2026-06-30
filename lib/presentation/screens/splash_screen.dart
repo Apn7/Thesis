@@ -26,8 +26,7 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
-  String _statusBn = 'শুরু হচ্ছে...';
-  String _statusEn = 'Starting up...';
+  String _status = 'চালু হচ্ছে...';
   double _progress = 0.0;
 
   late final AnimationController _pulseController;
@@ -99,7 +98,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (!(await p.status).isGranted) toRequest.add(p);
     }
     if (toRequest.isEmpty) {
-      _update('অনুমতি ✓', 'Permissions ✓', 0.04);
+      _update('অনুমতি ✓', 0.04);
       return;
     }
 
@@ -109,14 +108,12 @@ class _SplashScreenState extends State<SplashScreen>
     // dialog, so speak an instruction with our own TTS first.
     if (!VoiceAnnouncer.screenReaderOn) {
       await TtsService.instance.speak(
-        'স্মার্ট ক্যানের কিছু অনুমতি প্রয়োজন। অনুমতি দিতে TalkBack চালু করুন, '
-        'অথবা একজন দৃষ্টিমান ব্যক্তির সাহায্য নিন। '
-        'Smart Cane needs some permissions. Please turn on TalkBack to grant '
-        'them, or ask for sighted help.',
+        'স্মার্ট ক্যানের কিছু অনুমতি প্রয়োজন। অনুমতি দিতে টকব্যাক চালু করুন, '
+        'অথবা চোখে দেখেন এমন কারও সাহায্য নিন।',
       );
     }
 
-    _update('অনুমতি নেওয়া হচ্ছে...', 'Requesting permissions...', 0.02);
+    _update('অনুমতি চাওয়া হচ্ছে...', 0.02);
 
     final statuses = await toRequest.request();
 
@@ -139,8 +136,7 @@ class _SplashScreenState extends State<SplashScreen>
       // user isn't stranded at a silent dialog.
       if (!VoiceAnnouncer.screenReaderOn) {
         await TtsService.instance.speak(
-          'কিছু অনুমতি বন্ধ আছে। সেটিংস থেকে অনুমতি দিন। '
-          'Some permissions are blocked. Please allow them in Settings.',
+          'কিছু অনুমতি বন্ধ আছে। অনুগ্রহ করে সেটিংসে গিয়ে অনুমতি দিন।',
         );
       }
 
@@ -150,11 +146,10 @@ class _SplashScreenState extends State<SplashScreen>
         context: context,
         barrierDismissible: false,
         builder: (_) => AlertDialog(
-          title: const Text('অনুমতি প্রয়োজন\nPermissions Required'),
+          title: const Text('অনুমতি প্রয়োজন'),
           content: Text(
-            'নিম্নলিখিত অনুমতি দিন: ${permanentlyDenied.join(", ")}\n\n'
-            'Please allow: ${permanentlyDenied.join(", ")}\n\n'
-            'Settings → App → Permissions',
+            'অনুগ্রহ করে অনুমতি দিন: ${permanentlyDenied.join(", ")}\n\n'
+            'সেটিংস → অ্যাপ → অনুমতি',
           ),
           actions: [
             TextButton(
@@ -162,18 +157,18 @@ class _SplashScreenState extends State<SplashScreen>
                 openAppSettings();
                 Navigator.pop(context);
               },
-              child: const Text('সেটিংস খুলুন / Open Settings'),
+              child: const Text('সেটিংস খুলুন'),
             ),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('এড়িয়ে যান / Skip'),
+              child: const Text('এড়িয়ে যান'),
             ),
           ],
         ),
       );
     }
 
-    _update('অনুমতি সম্পন্ন ✓', 'Permissions done ✓', 0.04);
+    _update('অনুমতি সম্পন্ন ✓', 0.04);
   }
 
   // Bengali STT model copy — disabled to reduce APK size
@@ -191,36 +186,31 @@ class _SplashScreenState extends State<SplashScreen>
   // }
 
   Future<void> _initServices() async {
-    _update('সার্ভিস চালু হচ্ছে...', 'Starting services...', 0.94);
+    _update('সার্ভিস চালু হচ্ছে...', 0.94);
     await SettingsService.instance.load();
-    await SpeechService.instance.setLocale(
-      SettingsService.instance.languageMode,
-    );
-    _update('প্রস্তুত!', 'Ready!', 1.0);
+    // Fully ready the offline Bengali STT (model was pre-warmed in main()).
+    await SpeechService.instance.initialize();
+    _update('প্রস্তুত!', 1.0);
 
     if (VoiceAnnouncer.screenReaderOn) {
       // TalkBack was only needed to grant the permission dialog.  For daily use
       // the app is self-voicing, and TalkBack's element-by-element narration
       // competes with our own voice — so ask the user to switch it off.
       await TtsService.instance.speak(
-        'প্রস্তুত। সবচেয়ে ভালো ব্যবহারের জন্য এখন দুটি ভলিউম বোতাম একসাথে '
-        'তিন সেকেন্ড চেপে ধরে TalkBack বন্ধ করুন। '
-        'Ready. For the best experience, please turn off TalkBack now by '
-        'holding both volume buttons for three seconds.',
+        'প্রস্তুত। সেরা অভিজ্ঞতার জন্য দুটি ভলিউম বোতাম তিন সেকেন্ড চেপে ধরে '
+        'এখন টকব্যাক বন্ধ করুন।',
       );
     } else {
-      // No screen reader — our own TTS gives the ready cue.
-      await VoiceAnnouncer.announce('প্রস্তুত। Ready.');
+      await VoiceAnnouncer.announce('প্রস্তুত।');
     }
 
     await Future.delayed(const Duration(milliseconds: 400));
   }
 
-  void _update(String bn, String en, double progress) {
+  void _update(String status, double progress) {
     if (!mounted) return;
     setState(() {
-      _statusBn = bn;
-      _statusEn = en;
+      _status = status;
       _progress = progress;
     });
   }
@@ -245,7 +235,7 @@ class _SplashScreenState extends State<SplashScreen>
                   Icons.accessibility_new,
                   size: 96,
                   color: AppColors.primary,
-                  semanticLabel: 'Smart Cane',
+                  semanticLabel: 'স্মার্ট ক্যান',
                 ),
               ),
               const SizedBox(height: 24),
@@ -257,16 +247,6 @@ class _SplashScreenState extends State<SplashScreen>
                   fontWeight: FontWeight.bold,
                   color: AppColors.textOnDark,
                   letterSpacing: 0.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Smart Cane',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: AppColors.textSecondaryOnDark,
-                  letterSpacing: 1.2,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -286,19 +266,10 @@ class _SplashScreenState extends State<SplashScreen>
               const SizedBox(height: 16),
               // Status text
               Text(
-                _statusBn,
+                _status,
                 style: const TextStyle(
                   fontSize: 15,
                   color: AppColors.textOnDark,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _statusEn,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondaryOnDark,
                 ),
                 textAlign: TextAlign.center,
               ),

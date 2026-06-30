@@ -37,8 +37,8 @@ class _VoiceIndicatorState extends State<VoiceIndicator>
     return Semantics(
       liveRegion: true,
       label: widget.isListening
-          ? 'শুনছি। Listening.'
-          : 'ভয়েস কমান্ডের জন্য অপেক্ষা করছি। Waiting for voice command.',
+          ? 'শুনছি।'
+          : 'ভয়েস কমান্ডের জন্য অপেক্ষা করছি।',
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {

@@ -12,7 +12,6 @@ import 'fusion/existence_grid.dart';
 import 'fusion/track.dart';
 import 'pi_distance_service.dart';
 import 'pi_frame_server.dart';
-import 'settings_service.dart';
 import 'tts_service.dart';
 
 /// The fusion "brain": combines the Pi camera's YOLO detections with the
@@ -32,7 +31,7 @@ import 'tts_service.dart';
 ///  * State-change-only announcements with a per-object cooldown (ISANA /
 ///    GlAccess) so the user isn't talked at every frame.
 ///  * **Priority layer:** while the sonar verdict is CRITICAL, the
-///    `HomeScreen` proximity alarm ("থামুন" + tone + heavy haptics) owns the
+///    `HomeScreen` proximity alarm ("Stop" + tone + heavy haptics) owns the
 ///    audio channel, so fusion stays silent rather than talking over a
 ///    safety-critical warning.
 ///
@@ -357,7 +356,6 @@ class SensorFusionService extends ChangeNotifier {
       return;
     }
 
-    final bn = SettingsService.instance.languageMode == 'bn';
     final inRange =
         distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
 
@@ -371,13 +369,13 @@ class SensorFusionService extends ChangeNotifier {
     if (centerObj != null) {
       centerLabel = centerObj.label;
       centerCooldownKey = centerLabel;
-      centerPhrase = _centerPhrase(centerLabel, inRange ? distCm : null, bn);
+      centerPhrase = _centerPhrase(centerLabel, inRange ? distCm : null);
     } else if (inRange) {
       // Sonar fallback: the camera sees nothing ahead but the sonar does —
       // glass, a thin pole, an unrecognised object. Worth a heads-up.
       centerLabel = '__obstacle__';
       centerCooldownKey = '__obstacle__';
-      centerPhrase = _obstaclePhrase(distCm, bn);
+      centerPhrase = _obstaclePhrase(distCm);
     }
 
     // ── Sides: highest-count confirmed object, object name only ─────────
@@ -403,21 +401,21 @@ class SensorFusionService extends ChangeNotifier {
     }
     if (leftLabel != _lastLeft) {
       if (leftLabel != null && _canAnnounce('left', leftLabel)) {
-        parts.add(_sidePhrase(leftLabel, PositionZone.left, bn));
+        parts.add(_sidePhrase(leftLabel, PositionZone.left));
         _recordAnnouncement('left', leftLabel);
       }
       _lastLeft = leftLabel;
     }
     if (rightLabel != _lastRight) {
       if (rightLabel != null && _canAnnounce('right', rightLabel)) {
-        parts.add(_sidePhrase(rightLabel, PositionZone.right, bn));
+        parts.add(_sidePhrase(rightLabel, PositionZone.right));
         _recordAnnouncement('right', rightLabel);
       }
       _lastRight = rightLabel;
     }
 
     if (parts.isNotEmpty) {
-      final utterance = parts.join(bn ? '। ' : '. ');
+      final utterance = parts.join('. ');
       _lastAnnouncement = utterance;
       _tts.speak(utterance);
     }
@@ -435,7 +433,6 @@ class SensorFusionService extends ChangeNotifier {
 
     final distCm = _distance.latestDistance;
     final verdict = verdictForDistanceCm(distCm);
-    final bn = SettingsService.instance.languageMode == 'bn';
     final inRange =
         distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
 
@@ -471,8 +468,8 @@ class SensorFusionService extends ChangeNotifier {
     if (picks.isNotEmpty) {
       _orderForUtterance(picks);
       final utterance = picks
-          .map((t) => _phraseFor(t, bn))
-          .join(bn ? '। ' : '. ');
+          .map((t) => _phraseFor(t))
+          .join('. ');
       _lastAnnouncement = utterance;
       _tts.speak(utterance);
     }
@@ -591,15 +588,15 @@ class SensorFusionService extends ChangeNotifier {
     picks.sort((a, b) => rank(a.zone).compareTo(rank(b.zone)));
   }
 
-  String _phraseFor(Track t, bool bn) {
+  String _phraseFor(Track t) {
     if (t.label == '__obstacle__') {
-      return _obstaclePhrase(t.distanceCm ?? 0, bn);
+      return _obstaclePhrase(t.distanceCm ?? 0);
     }
     if (t.zone == PositionZone.center) {
       final approaching = t.tier == 1 && t.seenThisFrame && t.areaTrend > 0.15;
-      return _centerPhrase(t.label, t.distanceCm, bn, approaching: approaching);
+      return _centerPhrase(t.label, t.distanceCm, approaching: approaching);
     }
-    return _sidePhrase(t.label, t.zone, bn);
+    return _sidePhrase(t.label, t.zone);
   }
 
   /// Stores the latest sonar reading. Kept for API symmetry with the plan /
@@ -614,10 +611,9 @@ class SensorFusionService extends ChangeNotifier {
 
   /// Answers "what's in front of me?" from the current window: the top-N most
   /// consistently-seen objects, plus the nearest sonar distance if in range.
-  String getSceneDescription(String lang) {
-    final bn = lang == 'bn';
+  String getSceneDescription() {
     if (_window.length < AppConstants.fusionWindowSize) {
-      return bn ? 'এখনও যথেষ্ট তথ্য নেই।' : 'Not enough information yet.';
+      return 'এখনও যথেষ্ট তথ্য নেই।';
     }
 
     final totals = <String, int>{};
@@ -633,32 +629,23 @@ class SensorFusionService extends ChangeNotifier {
 
     if (totals.isEmpty) {
       if (inRange) {
-        return bn
-            ? 'সামনে কিছু চিনতে পারিনি, তবে ${_metersStr(distCm, bn)} মিটার দূরে একটি বাধা আছে।'
-            : "I can't identify anything ahead, but there's an obstacle ${_metersStr(distCm, bn)} meters away.";
+        return 'সামনে কিছু চিনতে পারিনি, তবে ${_metersStr(distCm)} মিটার দূরে একটি বাধা আছে।';
       }
-      return bn ? 'সামনে কিছু সনাক্ত হয়নি।' : 'Nothing detected ahead.';
+      return 'সামনে কিছু সনাক্ত হয়নি।';
     }
 
     final sorted = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     final top = sorted
         .take(AppConstants.fusionOnDemandTopN)
-        .map((e) => _labelFor(e.key, bn))
+        .map((e) => _labelFor(e.key))
         .toList();
-    final list = top.join(bn ? ', ' : ', ');
+    final list = top.join(', ');
 
     final buf = StringBuffer();
-    if (bn) {
-      buf.write('সামনে $list আছে।');
-      if (inRange) {
-        buf.write(' নিকটতম বাধা ${_metersStr(distCm, bn)} মিটার দূরে।');
-      }
-    } else {
-      buf.write('Ahead I can see $list.');
-      if (inRange) {
-        buf.write(' Nearest obstacle ${_metersStr(distCm, bn)} meters away.');
-      }
+    buf.write('সামনে $list আছে।');
+    if (inRange) {
+      buf.write(' নিকটতম বাধা ${_metersStr(distCm)} মিটার দূরে।');
     }
     return buf.toString();
   }
@@ -736,47 +723,31 @@ class SensorFusionService extends ChangeNotifier {
     _lastRight = null;
   }
 
-  // ── Phrasing (bilingual) ──────────────────────────────────────────────
+  // ── Phrasing (Bengali) ────────────────────────────────────────────────
 
   String _centerPhrase(
     String label,
-    double? distCm,
-    bool bn, {
+    double? distCm, {
     bool approaching = false,
   }) {
-    final name = _labelFor(label, bn);
+    final name = _labelFor(label);
     if (approaching) {
       // Looming cue (Layer 3): the bbox is growing ⇒ the hazard is closing in.
-      if (distCm == null) {
-        return bn ? '$name এগিয়ে আসছে' : '$name approaching';
-      }
-      final m = _metersStr(distCm, bn);
-      return bn
-          ? '$name এগিয়ে আসছে, $m মিটার'
-          : '$name approaching, $m meters';
+      if (distCm == null) return '$name এগিয়ে আসছে';
+      return '$name এগিয়ে আসছে, ${_metersStr(distCm)} মিটার';
     }
-    if (distCm == null) {
-      return bn ? 'সামনে $name' : '$name ahead';
-    }
-    final m = _metersStr(distCm, bn);
-    return bn ? '$name, $m মিটার' : '$name, $m meters';
+    if (distCm == null) return 'সামনে $name';
+    return '$name, ${_metersStr(distCm)} মিটার';
   }
 
-  String _obstaclePhrase(double distCm, bool bn) {
-    final m = _metersStr(distCm, bn);
-    return bn ? 'সামনে বাধা, $m মিটার' : 'Obstacle ahead, $m meters';
-  }
+  String _obstaclePhrase(double distCm) =>
+      'সামনে বাধা, ${_metersStr(distCm)} মিটার';
 
-  String _sidePhrase(String label, PositionZone zone, bool bn) {
-    final name = _labelFor(label, bn);
-    return bn ? '${zone.bn} দিকে $name' : '$name on your ${zone.en}';
-  }
+  String _sidePhrase(String label, PositionZone zone) =>
+      '${zone.bn} দিকে ${_labelFor(label)}';
 
-  /// Distance in metres, one decimal, with Bangla digits when [bn].
-  String _metersStr(double cm, bool bn) {
-    final s = (cm / 100.0).toStringAsFixed(1);
-    return bn ? _toBnDigits(s) : s;
-  }
+  /// Distance in metres, one decimal place, in Bengali numerals.
+  String _metersStr(double cm) => _toBnDigits((cm / 100.0).toStringAsFixed(1));
 
   static String _toBnDigits(String s) {
     const bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
@@ -792,14 +763,11 @@ class SensorFusionService extends ChangeNotifier {
     return out.toString();
   }
 
-  /// Bangla name for a class label, falling back to the English label for
-  /// anything unmapped. English mode always returns the YOLO label as-is.
-  String _labelFor(String en, bool bn) {
-    if (!bn) return en;
-    return _bnLabels[en.toLowerCase()] ?? en;
-  }
+  /// Bengali name for a class label, falling back to the English label for
+  /// anything unmapped.
+  String _labelFor(String en) => _bnLabels[en.toLowerCase()] ?? en;
 
-  /// The 16 SafeWalkBD classes → Bangla. Keys are lowercased to match the
+  /// The 16 SafeWalkBD classes → Bengali. Keys are lowercased to match the
   /// model's class names (e.g. "Over-bridge" → "over-bridge"). Unmapped labels
   /// fall back to English.
   static const Map<String, String> _bnLabels = {

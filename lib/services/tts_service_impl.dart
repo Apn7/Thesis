@@ -29,6 +29,9 @@ class TtsServiceMobile extends TtsService {
     await _tts.setSpeechRate(0.45);
     await _tts.setVolume(1.0);
     await _tts.setPitch(1.0);
+    // Make speak() await actual completion, so the agent's `speaking` state is
+    // accurate and a barge-in (stop()) resolves the in-flight speak() at once.
+    await _tts.awaitSpeakCompletion(true);
 
     _tts.setStartHandler(() => _isSpeaking = true);
     _tts.setCompletionHandler(() => _isSpeaking = false);

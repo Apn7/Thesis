@@ -13,19 +13,19 @@ extension ObstacleVerdictX on ObstacleVerdict {
   String get label {
     switch (this) {
       case ObstacleVerdict.noData:
-        return 'NO DATA';
+        return 'তথ্য নেই';
       case ObstacleVerdict.critical:
-        return 'CRITICAL';
+        return 'বিপদ';
       case ObstacleVerdict.warning:
-        return 'WARNING';
+        return 'সতর্কতা';
       case ObstacleVerdict.caution:
-        return 'CAUTION';
+        return 'সাবধান';
       case ObstacleVerdict.safe:
-        return 'SAFE';
+        return 'নিরাপদ';
     }
   }
 
-  /// Short Bangla word spoken on verdict *escalation* (severity goes up).
+  /// Short English word spoken on verdict *escalation* (severity goes up).
   /// Continuous distance feedback is carried by the click + vibration
   /// cadence in the UI layer; speech is reserved for the moment the
   /// situation gets worse, so the user is informed without being alarmed

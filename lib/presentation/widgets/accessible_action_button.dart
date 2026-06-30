@@ -32,7 +32,7 @@ class AccessibleActionButton extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: '$label. $labelEn',
+      label: label,
       hint: semanticHint,
       enabled: true,
       child: Material(
@@ -72,21 +72,7 @@ class AccessibleActionButton extends StatelessWidget {
                       color: buttonColor,
                     ),
                     textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                SizedBox(height: AppConstants.spacingXs),
-                Flexible(
-                  child: Text(
-                    labelEn,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withOpacity(0.7),
-                    ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

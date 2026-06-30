@@ -31,7 +31,7 @@ class VoiceCommandResponse {
     return VoiceCommandResponse(
       action: json['action'] as String? ?? 'none',
       spokenResponse:
-          json['spoken_response'] as String? ?? 'দুঃখিত, বুঝতে পারিনি',
+          json['spoken_response'] as String? ?? "Sorry, I didn't understand.",
     );
   }
 
@@ -91,7 +91,7 @@ class LlmService {
   Future<VoiceCommandResponse> processCommand(String userText) async {
     if (!_initialized) {
       return VoiceCommandResponse.error(
-        'AI মডেল প্রস্তুত নয়। Model not ready.',
+        'AI model not ready.',
       );
     }
 
@@ -105,7 +105,7 @@ class LlmService {
     } on PlatformException catch (e) {
       debugPrint('LlmService: processCommand failed — ${e.code}: ${e.message}');
       return VoiceCommandResponse.error(
-        'দুঃখিত, একটি সমস্যা হয়েছে। Error: ${e.message}',
+        'Sorry, an error occurred. Error: ${e.message}',
       );
     }
   }
@@ -138,7 +138,7 @@ class LlmService {
     // No valid JSON: return the raw text as the spoken reply, no navigation.
     return VoiceCommandResponse(
       action: 'none',
-      spokenResponse: raw.isNotEmpty ? raw : 'দুঃখিত, বুঝতে পারিনি',
+      spokenResponse: raw.isNotEmpty ? raw : "Sorry, I didn't understand.",
     );
   }
 }

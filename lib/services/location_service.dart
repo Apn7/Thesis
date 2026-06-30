@@ -113,7 +113,7 @@ class LocationService {
             url,
             headers: {
               'User-Agent': 'SmartCaneApp/1.0', // Required by Nominatim
-              'Accept-Language': 'en,bn', // Request English and Bengali
+              'Accept-Language': 'bn,en', // Prefer Bengali place names
             },
           )
           .timeout(const Duration(seconds: 10));
@@ -137,8 +137,9 @@ class LocationService {
 
           // Add relevant address parts
           if (address['road'] != null) parts.add(address['road']);
-          if (address['neighbourhood'] != null)
+          if (address['neighbourhood'] != null) {
             parts.add(address['neighbourhood']);
+          }
           if (address['suburb'] != null) parts.add(address['suburb']);
           if (address['city'] != null) parts.add(address['city']);
           if (address['town'] != null) parts.add(address['town']);

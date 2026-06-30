@@ -1,49 +1,32 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'speech_service.dart';
-
-/// Persists user preferences (language mode, etc.) and notifies listeners.
+/// Persists user preferences and notifies listeners.
 ///
-/// Uses [SharedPreferences] for simple key-value storage.
-/// Access via [SettingsService.instance].
+/// The app is **Bengali-only**, so [languageMode] is fixed at `'bn'`. The
+/// stored key is retained for forward-compatibility / silent migration so an
+/// older preferences file doesn't cause errors.
 class SettingsService extends ChangeNotifier {
   static final SettingsService instance = SettingsService._();
   SettingsService._();
 
   static const _kLangKey = 'stt_language_mode';
 
-  /// One of `'bn'` (Bangla, default) or `'en'` (English via Android STT).
-  String _languageMode = 'bn';
+  /// Always `'bn'` — the app speaks and listens in Bengali only.
+  String get languageMode => 'bn';
 
-  String get languageMode => _languageMode;
-
-  /// Load persisted settings.  Call once at app startup.
-  ///
-  /// Migrates any legacy `'both'` value (from the previous SLI-based
-  /// implementation) to `'bn'` so existing users don't end up in an
-  /// unsupported state.
+  /// Load persisted settings. Call once at app startup.
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
-    final stored = prefs.getString(_kLangKey) ?? 'bn';
-    // Migrate legacy 'both' → 'bn'
-    _languageMode = (stored == 'bn' || stored == 'en') ? stored : 'bn';
-    debugPrint('SettingsService: loaded languageMode = $_languageMode');
+    // Migrate any stored language value to 'bn' silently.
+    if (prefs.getString(_kLangKey) != 'bn') {
+      await prefs.setString(_kLangKey, 'bn');
+    }
+    debugPrint('SettingsService: loaded (language fixed at bn)');
   }
 
-  /// Update the language mode, persist it, notify listeners, and
-  /// propagate to [SpeechService].
+  /// No-op — kept for call-site compatibility. Language is always Bengali.
   Future<void> setLanguageMode(String mode) async {
-    assert(
-      mode == 'bn' || mode == 'en',
-      'setLanguageMode: mode must be bn or en',
-    );
-    if (mode == _languageMode) return;
-    _languageMode = mode;
-    notifyListeners();
-    await SpeechService.instance.setLocale(mode);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kLangKey, mode);
-    debugPrint('SettingsService: saved languageMode = $mode');
+    debugPrint('SettingsService: setLanguageMode ignored — fixed at bn');
   }
 }

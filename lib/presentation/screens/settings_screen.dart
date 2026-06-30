@@ -13,27 +13,10 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late String _selectedLanguage; // 'bangla' | 'english'
   double _speechRate = 1.0;
   bool _vibrationEnabled = true;
   bool _voiceConfirmationEnabled = true;
   bool _batterySaverMode = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Map stored locale back to UI string.
-    // Any legacy 'both' value is already migrated to 'bn' by SettingsService.
-    final stored = SettingsService.instance.languageMode;
-    _selectedLanguage = stored == 'en' ? 'english' : 'bangla';
-  }
-
-  void _onLanguageChanged(String? value) {
-    if (value == null) return;
-    setState(() => _selectedLanguage = value);
-    final locale = value == 'english' ? 'en' : 'bn';
-    SettingsService.instance.setLanguageMode(locale);
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,71 +24,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: 'সেটিংস। Settings',
-          child: const Column(
-            children: [
-              Text('সেটিংস'),
-              Text('Settings', style: TextStyle(fontSize: 12)),
-            ],
-          ),
+          label: 'সেটিংস',
+          child: const Text('সেটিংস'),
         ),
       ),
       body: SafeArea(
         child: ListView(
           padding: EdgeInsets.all(AppConstants.spacingL),
           children: [
-            // ── Language Section ──────────────────────────────────────
-            _buildSectionHeader(context, 'ভাষা / Language'),
-
-            Card(
-              child: Column(
-                children: [
-                  Semantics(
-                    label:
-                        'শুধু বাংলা ভয়েস রিকগনিশন। Bangla only voice recognition.',
-                    child: RadioListTile<String>(
-                      title: const Text('শুধু বাংলা / Bangla Only'),
-                      subtitle: const Text(
-                        'ডিফল্ট · অফলাইন / Default · Offline',
-                      ),
-                      value: 'bangla',
-                      groupValue: _selectedLanguage,
-                      onChanged: _onLanguageChanged,
-                      secondary: const Icon(Icons.language),
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  Semantics(
-                    label:
-                        'শুধু ইংরেজি ভয়েস রিকগনিশন, অ্যান্ড্রয়েড বিল্ট-ইন ব্যবহার করে। '
-                        'English only, uses Android built-in speech recognizer.',
-                    child: RadioListTile<String>(
-                      title: const Text('শুধু ইংরেজি / English Only'),
-                      subtitle: const Text(
-                        'অ্যান্ড্রয়েড বিল্ট-ইন STT · অফলাইন\n'
-                        'Android built-in STT · Offline',
-                      ),
-                      value: 'english',
-                      groupValue: _selectedLanguage,
-                      onChanged: _onLanguageChanged,
-                      secondary: const Icon(Icons.translate),
-                      isThreeLine: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Info banner shown when English is selected
-            if (_selectedLanguage == 'english') ...[
-              SizedBox(height: AppConstants.spacingM),
-              _buildEnglishInfoBanner(context),
-            ],
-
-            SizedBox(height: AppConstants.spacingXl),
-
             // ── Voice Settings ────────────────────────────────────────
-            _buildSectionHeader(context, 'ভয়েস সেটিংস / Voice Settings'),
+            _buildSectionHeader(context, 'ভয়েস সেটিংস'),
 
             Card(
               child: Column(
@@ -123,7 +51,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('কথা বলার গতি / Speech Rate'),
+                                  const Text('কথা বলার গতি'),
                                   Text(
                                     '${(_speechRate * 100).round()}%',
                                     style: Theme.of(context).textTheme.bodySmall
@@ -155,7 +83,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile(
                     secondary: const Icon(Icons.check_circle_outline),
                     title: const Text('ভয়েস নিশ্চিতকরণ'),
-                    subtitle: const Text('Voice Confirmation'),
                     value: _voiceConfirmationEnabled,
                     onChanged: (value) {
                       setState(() {
@@ -170,7 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(height: AppConstants.spacingXl),
 
             // ── Accessibility Settings ────────────────────────────────
-            _buildSectionHeader(context, 'অ্যাক্সেসিবিলিটি / Accessibility'),
+            _buildSectionHeader(context, 'অ্যাক্সেসিবিলিটি'),
 
             Card(
               child: Column(
@@ -178,7 +105,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile(
                     secondary: const Icon(Icons.vibration),
                     title: const Text('ভাইব্রেশন ফিডব্যাক'),
-                    subtitle: const Text('Vibration Feedback'),
                     value: _vibrationEnabled,
                     onChanged: (value) {
                       setState(() {
@@ -190,7 +116,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   SwitchListTile(
                     secondary: const Icon(Icons.battery_saver),
                     title: const Text('ব্যাটারি সেভার মোড'),
-                    subtitle: const Text('Battery Saver Mode'),
                     value: _batterySaverMode,
                     onChanged: (value) {
                       setState(() {
@@ -205,14 +130,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(height: AppConstants.spacingXl),
 
             // ── About Section ─────────────────────────────────────────
-            _buildSectionHeader(context, 'সম্পর্কে / About'),
+            _buildSectionHeader(context, 'সম্পর্কে'),
 
             Card(
               child: Column(
                 children: [
                   ListTile(
                     leading: const Icon(Icons.info_outline),
-                    title: const Text('অ্যাপ সংস্করণ / App Version'),
+                    title: const Text('অ্যাপ ভার্সন'),
                     trailing: Text(
                       AppConstants.appVersion,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -223,8 +148,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const Divider(height: 1),
                   ListTile(
                     leading: const Icon(Icons.school),
-                    title: const Text('থিসিস প্রজেক্ট'),
-                    subtitle: const Text('Thesis Project'),
+                    title: const Text('থিসিস প্রকল্প'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
                       _showAboutDialog(context);
@@ -234,7 +158,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ListTile(
                     leading: const Icon(Icons.help_outline),
                     title: const Text('সাহায্য ও সহায়তা'),
-                    subtitle: const Text('Help & Support'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
                       Navigator.pushNamed(context, '/help');
@@ -253,55 +176,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               },
               icon: const Icon(Icons.refresh, color: AppColors.warning),
               label: const Text(
-                'ডিফল্ট রিসেট করুন / Reset to Default',
+                'ডিফল্টে রিসেট করুন',
                 style: TextStyle(color: AppColors.warning),
               ),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.warning),
                 padding: EdgeInsets.symmetric(vertical: AppConstants.spacingL),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Info banner shown when the English STT option is selected.
-  Widget _buildEnglishInfoBanner(BuildContext context) {
-    return Semantics(
-      label:
-          'তথ্য: ইংরেজি মোড আপনার ফোনের বিল্ট-ইন ভয়েস রিকগনিশন ব্যবহার করে। '
-          'Info: English mode uses your phone\'s built-in voice recognition.',
-      child: Container(
-        padding: EdgeInsets.all(AppConstants.spacingM),
-        decoration: BoxDecoration(
-          color: AppColors.info.withAlpha(30),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.info.withAlpha(80)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(Icons.info_outline, color: AppColors.info, size: 20),
-            SizedBox(width: AppConstants.spacingM),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'ইংরেজি মোড আপনার ফোনের বিল্ট-ইন অফলাইন ভয়েস রিকগনিশন ব্যবহার করে।',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  SizedBox(height: AppConstants.spacingXs),
-                  Text(
-                    'English mode uses your phone\'s built-in offline speech recognizer. '
-                    'If unavailable, please switch back to Bangla.',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
@@ -333,7 +213,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('সম্পর্কে / About'),
+        title: const Text('সম্পর্কে'),
         content: const SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -343,18 +223,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'স্বয়ংক্রিয় স্মার্ট ক্যান',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              SizedBox(height: 4),
-              Text(
-                'Autonomous Smart Cane',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
               SizedBox(height: 16),
               Text(
-                'একটি IoT-সক্ষম, ভিশন এবং ভয়েস-সহায়তা নেভিগেশন সহায়ক যন্ত্র দৃষ্টিহীনদের জন্য।',
-              ),
-              SizedBox(height: 8),
-              Text(
-                'An IoT-enabled, vision and voice-assisted navigation aid for the visually impaired.',
+                'দৃষ্টিপ্রতিবন্ধীদের জন্য একটি আইওটি-নির্ভর, ভিশন ও ভয়েস-সহায়ক চলাচল সহায়িকা।',
               ),
             ],
           ),
@@ -362,7 +233,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('ঠিক আছে / OK'),
+            child: const Text('ঠিক আছে'),
           ),
         ],
       ),
@@ -373,19 +244,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('রিসেট নিশ্চিত করুন / Confirm Reset'),
-        content: const Text(
-          'সব সেটিংস ডিফল্ট মানগুলিতে পুনরায় সেট করবেন?\n\nReset all settings to default values?',
-        ),
+        title: const Text('রিসেট নিশ্চিত করুন'),
+        content: const Text('সব সেটিংস ডিফল্ট মানে রিসেট করবেন?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('বাতিল / Cancel'),
+            child: const Text('বাতিল'),
           ),
           FilledButton(
             onPressed: () {
               setState(() {
-                _selectedLanguage = 'bangla'; // default is Bangla
                 _speechRate = 1.0;
                 _vibrationEnabled = true;
                 _voiceConfirmationEnabled = true;
@@ -395,14 +263,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Navigator.pop(context);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('সেটিংস রিসেট হয়েছে / Settings reset'),
-                  ),
+                  const SnackBar(content: Text('সেটিংস রিসেট হয়েছে')),
                 );
               }
             },
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
-            child: const Text('রিসেট / Reset'),
+            child: const Text('রিসেট'),
           ),
         ],
       ),

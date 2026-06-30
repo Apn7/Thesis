@@ -6,26 +6,19 @@ import '../../services/detection_models.dart';
 
 /// One row of the live-detection list shown under the camera preview.
 ///
-/// Renders the COCO class label (English — COCO class names are not yet
-/// localised for the demo), a confidence bar, and a position chip
-/// (left/center/right) computed from the bbox centre.  Density matches
-/// the existing `info_card.dart` aesthetic.
+/// Renders the COCO class label, a confidence bar, and a position chip
+/// (left/center/right) computed from the bbox centre.
 class DetectionListTile extends StatelessWidget {
   final Detection detection;
-  final bool useBangla;
 
   const DetectionListTile({
     super.key,
     required this.detection,
-    this.useBangla = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final pct = (detection.confidence * 100).clamp(0, 100).toStringAsFixed(0);
-    final positionText = useBangla
-        ? detection.position.bn
-        : detection.position.en;
 
     return Padding(
       padding: EdgeInsets.symmetric(
@@ -87,7 +80,7 @@ class DetectionListTile extends StatelessWidget {
               borderRadius: BorderRadius.circular(AppConstants.radiusS),
             ),
             child: Text(
-              positionText,
+              detection.position.bn,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,

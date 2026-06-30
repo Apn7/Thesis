@@ -88,7 +88,7 @@ class FusionDebugCard extends StatelessWidget {
         SizedBox(width: AppConstants.spacingS),
         Expanded(
           child: Text(
-            'ফিউশন ডিবাগ / Fusion Debug',
+            'ফিউশন ডিবাগ',
             style: Theme.of(
               context,
             ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
@@ -118,8 +118,8 @@ class FusionDebugCard extends StatelessWidget {
       children: [
         _stat('FPS', fusion.fps.toStringAsFixed(1)),
         _stat('Latency', '${fusion.latencyMs.toStringAsFixed(0)} ms'),
-        _stat('Frames', '${fusion.framesProcessed}'),
-        _stat('Tracks', '${fusion.confirmedTracks.length}'),
+        _stat('ফ্রেম', '${fusion.framesProcessed}'),
+        _stat('ট্র্যাক', '${fusion.confirmedTracks.length}'),
       ],
     );
   }
@@ -138,7 +138,7 @@ class FusionDebugCard extends StatelessWidget {
         SizedBox(height: AppConstants.spacingXs),
         if (tracks.isEmpty)
           Text(
-            'none confirmed',
+            'কিছু নিশ্চিত হয়নি',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -154,7 +154,7 @@ class FusionDebugCard extends StatelessWidget {
     final utility = fusion.utilityFor(t);
     final looming = t.areaTrend > 0.15;
     final live = t.seenThisFrame;
-    final name = t.label == '__obstacle__' ? 'obstacle (sonar)' : t.label;
+    final name = t.label == '__obstacle__' ? 'বাধা (সোনার)' : t.label;
 
     // Sub-line: the scheduler inputs that decided whether this track spoke.
     final facts = <String>[
@@ -285,9 +285,9 @@ class FusionDebugCard extends StatelessWidget {
       children: [
         _stat('FPS', fusion.fps.toStringAsFixed(1)),
         _stat('Latency', '${fusion.latencyMs.toStringAsFixed(0)} ms'),
-        _stat('Frames', '${fusion.framesProcessed}'),
+        _stat('ফ্রেম', '${fusion.framesProcessed}'),
         _stat(
-          'Window',
+          'উইন্ডো',
           '${fusion.windowFill}/${AppConstants.fusionWindowSize}',
         ),
       ],
@@ -300,9 +300,9 @@ class FusionDebugCard extends StatelessWidget {
       children: [
         Icon(Icons.straighten, size: AppConstants.iconS, color: color),
         SizedBox(width: AppConstants.spacingS),
-        Text('Sonar: ', style: Theme.of(context).textTheme.bodyMedium),
+        Text('সোনার: ', style: Theme.of(context).textTheme.bodyMedium),
         Text(
-          distCm == null ? '— cm' : '${distCm.toStringAsFixed(1)} cm',
+          distCm == null ? '— সেমি' : '${distCm.toStringAsFixed(1)} সেমি',
           style: Theme.of(
             context,
           ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
@@ -323,7 +323,7 @@ class FusionDebugCard extends StatelessWidget {
     if (c == null) {
       centerText = '—';
     } else if (c == '__obstacle__') {
-      centerText = 'obstacle (sonar)';
+      centerText = 'বাধা (সোনার)';
     } else {
       centerText = distCm != null
           ? '$c @ ${(distCm / 100).toStringAsFixed(1)} m'
@@ -334,15 +334,15 @@ class FusionDebugCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Confirmed (≥${AppConstants.fusionMajorityThreshold}/${AppConstants.fusionWindowSize})',
+          'নিশ্চিত (≥${AppConstants.fusionMajorityThreshold}/${AppConstants.fusionWindowSize})',
           style: Theme.of(
             context,
           ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
         ),
         SizedBox(height: AppConstants.spacingXs),
-        _zoneRow(context, 'Left', fusion.confirmedLeft ?? '—'),
-        _zoneRow(context, 'Center', centerText, emphasise: true),
-        _zoneRow(context, 'Right', fusion.confirmedRight ?? '—'),
+        _zoneRow(context, 'বাম', fusion.confirmedLeft ?? '—'),
+        _zoneRow(context, 'মাঝে', centerText, emphasise: true),
+        _zoneRow(context, 'ডান', fusion.confirmedRight ?? '—'),
       ],
     );
   }
@@ -411,7 +411,7 @@ class FusionDebugCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Raw detections (${dets.length})',
+          'কাঁচা সনাক্তকরণ (${dets.length})',
           style: Theme.of(
             context,
           ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),

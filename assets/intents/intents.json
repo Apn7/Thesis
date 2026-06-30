@@ -1,5 +1,5 @@
 {
-  "_comment": "Local intent definitions for the smart-cane voice assistant. Each intent lists phrase variants in Bangla, English, and Banglish (Bengali in Latin script). The IntentMatcher scores user input against every phrase and picks the highest-scoring intent above the confidence threshold; below the threshold the request falls through to the Groq cloud LLM.",
+  "_comment": "Local intent definitions for the smart-cane voice assistant. Each intent lists phrase variants in Bangla, English, and Banglish (Bengali in Latin script) so code-mixed input is matched offline. The IntentMatcher scores user input against every phrase and picks the highest-scoring intent above the confidence threshold; below the threshold the request falls through to the Groq cloud LLM. Each intent carries a single Bengali `response` string that the matcher returns verbatim.",
   "intents": [
     {
       "action": "navigate_home",
@@ -24,10 +24,7 @@
         "home screen e jao",
         "main screen e jao"
       ],
-      "responses": {
-        "bn": "হোম স্ক্রিনে যাচ্ছি",
-        "en": "Going to home screen"
-      }
+      "response": "হোম স্ক্রিনে যাচ্ছি"
     },
     {
       "action": "navigate_location",
@@ -56,10 +53,7 @@
         "location bolo",
         "obosthan dekhao"
       ],
-      "responses": {
-        "bn": "আপনার অবস্থান দেখাচ্ছি",
-        "en": "Showing your location"
-      }
+      "response": "আপনার অবস্থান দেখাচ্ছি"
     },
     {
       "action": "navigate_settings",
@@ -85,10 +79,7 @@
         "options khulo",
         "preference khulo"
       ],
-      "responses": {
-        "bn": "সেটিংস খুলছি",
-        "en": "Opening settings"
-      }
+      "response": "সেটিংস খুলছি"
     },
     {
       "action": "navigate_help",
@@ -117,10 +108,7 @@
         "kivabe babohar korbo",
         "shahajjo dao"
       ],
-      "responses": {
-        "bn": "সাহায্য পেইজ খুলছি",
-        "en": "Opening help"
-      }
+      "response": "সাহায্য পেইজ খুলছি"
     },
     {
       "action": "speak_battery",
@@ -147,10 +135,7 @@
         "charge koto",
         "charge koto ache"
       ],
-      "responses": {
-        "bn": "ব্যাটারি স্ট্যাটাস বলছি",
-        "en": "Telling battery status"
-      }
+      "response": "ব্যাটারি স্ট্যাটাস বলছি"
     },
     {
       "action": "speak_time",
@@ -176,10 +161,7 @@
         "shomoy koto",
         "shomoy bolo"
       ],
-      "responses": {
-        "bn": "এখন সময় বলছি",
-        "en": "Telling current time"
-      }
+      "response": "এখন সময় বলছি"
     },
     {
       "action": "describe_scene",
@@ -215,10 +197,7 @@
         "charpashe ki ache",
         "poribesh borno koro"
       ],
-      "responses": {
-        "bn": "সামনে দেখছি",
-        "en": "Describing what's ahead"
-      }
+      "response": "সামনে দেখছি"
     }
   ]
 }

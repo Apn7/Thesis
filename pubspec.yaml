@@ -114,8 +114,9 @@ flutter:
     # will surface a "model file not found" error, which is the correct
     # behaviour.
     # - assets/models/yolo11n_int8.tflite
-    # Removed to reduce APK size — re-add when Bengali STT is needed:
-    # - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
+    # Offline Bengali STT model (sherpa-onnx streaming Zipformer) — bundled so
+    # voice input works fully on-device without network.
+    - assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09/
     # Removed to reduce APK size — re-add when on-device LLM is needed:
     # - assets/models/gemma-4-E2B-it.litertlm
   #   - images/a_dot_burr.jpeg

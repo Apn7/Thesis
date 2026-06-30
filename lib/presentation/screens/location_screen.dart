@@ -18,7 +18,6 @@ class _LocationScreenState extends State<LocationScreen> {
   String _latitude = '--';
   String _longitude = '--';
   String _address = 'অবস্থান লোড হচ্ছে...';
-  String _addressEn = 'Loading location...';
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
@@ -33,7 +32,7 @@ class _LocationScreenState extends State<LocationScreen> {
   }
 
   void _announceLocation() {
-    debugPrint('Location: $_address, $_addressEn');
+    debugPrint('Location: $_address');
   }
 
   Future<void> _fetchLocation() async {
@@ -51,15 +50,14 @@ class _LocationScreenState extends State<LocationScreen> {
       setState(() {
         _latitude = locationData.latitudeFormatted;
         _longitude = locationData.longitudeFormatted;
-        _address = locationData.addressBn;
-        _addressEn = locationData.addressEn;
+        _address = locationData.addressEn;
         _isLoading = false;
         _hasError = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('অবস্থান পাওয়া গেছে / Location found'),
+          content: Text('অবস্থান পাওয়া গেছে'),
           duration: Duration(seconds: 2),
         ),
       );
@@ -69,11 +67,10 @@ class _LocationScreenState extends State<LocationScreen> {
         _isLoading = false;
         _hasError = true;
         _errorMessage =
-            'অবস্থান পাওয়া যায়নি। অনুগ্রহ করে GPS চালু করুন এবং অনুমতি দিন।';
+            'অবস্থান পাওয়া যায়নি। জিপিএস চালু করুন এবং অনুমতি দিন।';
         _latitude = '--';
         _longitude = '--';
         _address = 'অবস্থান পাওয়া যায়নি';
-        _addressEn = 'Location not available';
       });
     }
   }
@@ -88,18 +85,13 @@ class _LocationScreenState extends State<LocationScreen> {
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: 'আমার অবস্থান। My Location',
-          child: const Column(
-            children: [
-              Text('আমার অবস্থান'),
-              Text('My Location', style: TextStyle(fontSize: 12)),
-            ],
-          ),
+          label: 'আমার অবস্থান',
+          child: const Text('আমার অবস্থান'),
         ),
         actions: [
           Semantics(
             button: true,
-            label: 'রিফ্রেশ করুন। Refresh location',
+            label: 'অবস্থান রিফ্রেশ করুন',
             child: IconButton(
               icon: _isLoading
                   ? const SizedBox(
@@ -162,7 +154,7 @@ class _LocationScreenState extends State<LocationScreen> {
                               onPressed: () =>
                                   _locationService.openLocationSettings(),
                               icon: const Icon(Icons.settings),
-                              label: const Text('GPS সেটিংস'),
+                              label: const Text('জিপিএস সেটিংস'),
                             ),
                           ),
                           SizedBox(width: AppConstants.spacingS),
@@ -195,13 +187,8 @@ class _LocationScreenState extends State<LocationScreen> {
                         const CircularProgressIndicator(),
                         SizedBox(height: AppConstants.spacingL),
                         Text(
-                          'GPS থেকে অবস্থান নেওয়া হচ্ছে...',
+                          'জিপিএস থেকে অবস্থান নেওয়া হচ্ছে...',
                           style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          'Getting location from GPS...',
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(color: AppColors.textSecondary),
                         ),
                       ],
                     ),
@@ -219,8 +206,7 @@ class _LocationScreenState extends State<LocationScreen> {
                       borderRadius: BorderRadius.circular(AppConstants.radiusM),
                     ),
                     child: Semantics(
-                      label:
-                          'মানচিত্র প্রদর্শন। ভবিষ্যতে সক্রিয় হবে। Map display. Will be active in future.',
+                      label: 'মানচিত্র। ভবিষ্যতে চালু হবে।',
                       child: Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -232,13 +218,8 @@ class _LocationScreenState extends State<LocationScreen> {
                             ),
                             SizedBox(height: AppConstants.spacingM),
                             Text(
-                              'মানচিত্র এখানে থাকবে',
+                              'মানচিত্র এখানে আসবে',
                               style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Text(
-                              'Map will appear here',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AppColors.textSecondary),
                             ),
                           ],
                         ),
@@ -252,9 +233,9 @@ class _LocationScreenState extends State<LocationScreen> {
               // Address Section
               Semantics(
                 header: true,
-                label: 'ঠিকানা তথ্য। Address information',
+                label: 'ঠিকানার তথ্য',
                 child: Text(
-                  'ঠিকানা / Address',
+                  'ঠিকানা',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -268,7 +249,7 @@ class _LocationScreenState extends State<LocationScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(AppConstants.spacingL),
                   child: Semantics(
-                    label: 'আপনার ঠিকানা: $_address, $_addressEn',
+                    label: 'আপনার ঠিকানা: $_address',
                     child: Row(
                       children: [
                         Container(
@@ -287,21 +268,10 @@ class _LocationScreenState extends State<LocationScreen> {
                         ),
                         SizedBox(width: AppConstants.spacingL),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _address,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(fontWeight: FontWeight.bold),
-                              ),
-                              SizedBox(height: AppConstants.spacingXs),
-                              Text(
-                                _addressEn,
-                                style: Theme.of(context).textTheme.bodyMedium
-                                    ?.copyWith(color: AppColors.textSecondary),
-                              ),
-                            ],
+                          child: Text(
+                            _address,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ],
@@ -315,9 +285,9 @@ class _LocationScreenState extends State<LocationScreen> {
               // Coordinates Section
               Semantics(
                 header: true,
-                label: 'স্থানাঙ্ক। Coordinates',
+                label: 'স্থানাঙ্ক',
                 child: Text(
-                  'স্থানাঙ্ক / Coordinates',
+                  'স্থানাঙ্ক',
                   style: Theme.of(
                     context,
                   ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
@@ -329,10 +299,10 @@ class _LocationScreenState extends State<LocationScreen> {
               InfoCard(
                 icon: Icons.north,
                 title: 'অক্ষাংশ',
-                titleEn: 'Latitude',
+                titleEn: 'অক্ষাংশ',
                 value: _latitude,
                 color: AppColors.success,
-                semanticLabel: 'অক্ষাংশ, Latitude: $_latitude',
+                semanticLabel: 'অক্ষাংশ: $_latitude',
               ),
 
               SizedBox(height: AppConstants.spacingM),
@@ -340,10 +310,10 @@ class _LocationScreenState extends State<LocationScreen> {
               InfoCard(
                 icon: Icons.east,
                 title: 'দ্রাঘিমাংশ',
-                titleEn: 'Longitude',
+                titleEn: 'দ্রাঘিমাংশ',
                 value: _longitude,
                 color: AppColors.warning,
-                semanticLabel: 'দ্রাঘিমাংশ, Longitude: $_longitude',
+                semanticLabel: 'দ্রাঘিমাংশ: $_longitude',
               ),
 
               SizedBox(height: AppConstants.spacingXl),
@@ -355,7 +325,7 @@ class _LocationScreenState extends State<LocationScreen> {
                     child: FilledButton.icon(
                       onPressed: _isLoading ? null : _refreshLocation,
                       icon: const Icon(Icons.my_location),
-                      label: const Text('আবার পড়ুন\nRefresh'),
+                      label: const Text('রিফ্রেশ'),
                       style: FilledButton.styleFrom(
                         padding: EdgeInsets.symmetric(
                           vertical: AppConstants.spacingL,
@@ -369,12 +339,12 @@ class _LocationScreenState extends State<LocationScreen> {
                       onPressed: () {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text('অবস্থান সংরক্ষিত / Location saved'),
+                            content: Text('অবস্থান সংরক্ষণ করা হয়েছে'),
                           ),
                         );
                       },
                       icon: const Icon(Icons.save),
-                      label: const Text('সংরক্ষণ\nSave'),
+                      label: const Text('সংরক্ষণ'),
                       style: OutlinedButton.styleFrom(
                         padding: EdgeInsets.symmetric(
                           vertical: AppConstants.spacingL,
@@ -399,8 +369,7 @@ class _LocationScreenState extends State<LocationScreen> {
                   ),
                 ),
                 child: Semantics(
-                  label:
-                      'তথ্য: GPS অবস্থান অফলাইনে কাজ করে, ঠিকানার জন্য ইন্টারনেট প্রয়োজন। GPS location works offline, address requires internet.',
+                  label: 'জিপিএস ইন্টারনেট ছাড়াই কাজ করে, ঠিকানার জন্য ইন্টারনেট লাগে।',
                   child: Row(
                     children: [
                       Icon(
@@ -410,21 +379,10 @@ class _LocationScreenState extends State<LocationScreen> {
                       ),
                       SizedBox(width: AppConstants.spacingM),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '💡 GPS অবস্থান অফলাইনে কাজ করে',
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: AppConstants.spacingXs),
-                            Text(
-                              'GPS works offline, address needs internet',
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(color: AppColors.textSecondary),
-                            ),
-                          ],
+                        child: Text(
+                          'জিপিএস অফলাইনে কাজ করে, ঠিকানার জন্য ইন্টারনেট লাগে',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: AppColors.textSecondary),
                         ),
                       ),
                     ],

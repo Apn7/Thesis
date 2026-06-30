@@ -1,10 +1,12 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../core/utils/constants.dart';
 import 'groq_service.dart';
 import 'intent_matcher.dart';
 // import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
 import 'sensor_fusion_service.dart';
-import 'settings_service.dart';
 import 'speech_service.dart';
 import 'tts_service.dart';
 import '../core/utils/voice_announcer.dart';
@@ -24,7 +26,31 @@ enum VoiceAction {
   none,
 }
 
-/// Orchestrates speech recognition, Groq AI, and navigation
+/// The voice agent's lifecycle, modelled as an explicit state machine so there
+/// is exactly one source of truth and no path can strand the user.
+///
+/// ```
+///   idle ──(button down)──► listening ──(button up)──► thinking ──► speaking ──► idle
+///     ▲                          │                         │            │
+///     └──────────────────────────┴─────────────────────────┴────────────┘
+///                       (button down = barge-in: jump back to listening)
+/// ```
+enum VoiceState { idle, listening, thinking, speaking }
+
+/// Orchestrates speech recognition, intent matching, the cloud LLM, and
+/// navigation as a single-turn voice agent with **barge-in**.
+///
+/// Design (push-to-talk, so the button is the turn-detector — no VAD/echo
+/// cancellation needed):
+///  * **Button down** always starts a fresh turn. If the agent was thinking or
+///    speaking, that is a *barge-in*: TTS is silenced immediately and the
+///    previous turn is invalidated so its late result is discarded.
+///  * **Turn epoch** ([_turn]): every async result (STT, LLM, TTS) is tagged
+///    with the turn it belongs to and dropped if a newer turn has begun — this
+///    is what makes interruption safe and race-free.
+///  * **No dead ends**: empty transcripts, errors, timeouts and barge-in all
+///    transition to a defined state; a per-turn watchdog is the final net so
+///    the user can never be locked out of the microphone.
 class VoiceNavigationService extends ChangeNotifier {
   static VoiceNavigationService? _instance;
 
@@ -38,8 +64,12 @@ class VoiceNavigationService extends ChangeNotifier {
   bool _lastWasLocal = false;
   bool get lastWasLocal => _lastWasLocal;
 
-  bool _isListening = false;
-  bool _isProcessing = false;
+  VoiceState _state = VoiceState.idle;
+
+  /// Monotonic turn counter. Bumped on every button-down; async work compares
+  /// the turn it captured against this to know if it has been superseded.
+  int _turn = 0;
+
   String _currentTranscript = '';
   String _lastResponse = '';
   String _error = '';
@@ -57,12 +87,20 @@ class VoiceNavigationService extends ChangeNotifier {
     _setupSpeechCallbacks();
   }
 
-  // Getters
-  bool get isListening => _isListening;
-  bool get isProcessing => _isProcessing;
+  // ── State getters (back the existing UI) ──────────────────────────
+  bool get isListening => _state == VoiceState.listening;
+  bool get isProcessing => _state == VoiceState.thinking;
+  bool get isSpeaking => _state == VoiceState.speaking;
+  bool get isBusy => _state != VoiceState.idle;
   String get currentTranscript => _currentTranscript;
   String get lastResponse => _lastResponse;
   String get error => _error;
+
+  void _setState(VoiceState s) {
+    if (_state == s) return;
+    _state = s;
+    notifyListeners();
+  }
 
   /// Initialize all services
   Future<void> initialize() async {
@@ -103,64 +141,84 @@ class VoiceNavigationService extends ChangeNotifier {
       _currentTranscript = text;
       notifyListeners();
 
-      // Trace every transcription event so you can see partials in real time
-      // and spot empty-final-result cases.
       final tag = isFinal ? 'FINAL  ' : 'partial';
       debugPrint('[STT] $tag : "$text" (len=${text.length})');
 
-      if (isFinal) {
-        if (text.isNotEmpty) {
-          _processCommand(text);
-        } else {
-          debugPrint(
-            '[STT] !! final transcript was empty — '
-            'spoke too softly / too briefly / mic permission?',
-          );
-        }
-      }
+      if (isFinal) _onFinalTranscript(text);
     };
 
-    _speech.onStatus = (status) {
-      debugPrint('[STT] status -> $status');
-      if (status == 'processing') {
-        _isProcessing = true;
-        notifyListeners();
-      } else if (status == 'done' || status == 'notListening') {
-        _isListening = false;
-        notifyListeners();
-      }
-    };
+    // Status is informational only — the state machine here is authoritative,
+    // so a stray status can never strand the user (the old bug).
+    _speech.onStatus = (status) => debugPrint('[STT] status -> $status');
 
     _speech.onError = (error) {
+      // Don't speak here: the pipeline also delivers an empty final transcript
+      // on error, and [_onFinalTranscript] gives a single retry cue. Just
+      // record it for the debug overlay.
       debugPrint('[STT] !! error : $error');
       _error = error;
-      _isListening = false;
-      notifyListeners();
-      // Blind users get no visual cue — surface the failure as audio.  Routes
-      // through TalkBack when it's running (no double-talk), else our own TTS.
-      VoiceAnnouncer.announce(error);
     };
   }
 
-  /// Start listening for voice commands
-  Future<void> startListening() async {
-    if (_isListening || _isProcessing) return;
+  // ── Push-to-talk turn control ─────────────────────────────────────
 
-    debugPrint('[STT] >>> startListening()');
+  /// Button **down**. Always honored — this is the barge-in entry point.
+  Future<void> startListening() async {
+    // Already capturing (a duplicate key-down) — ignore.
+    if (_state == VoiceState.listening) return;
+
+    // New turn: invalidates any in-flight thinking/speaking from a prior turn.
+    final turn = ++_turn;
     _error = '';
     _currentTranscript = '';
-    _isListening = true;
-    notifyListeners();
 
-    await _speech.startListening();
+    // Barge-in: silence the assistant at once so it neither talks over the user
+    // nor lets the mic capture its own TTS.
+    try {
+      await _tts.stop();
+    } catch (_) {}
+
+    _setState(VoiceState.listening);
+    debugPrint('[STT] >>> startListening() turn=$turn');
+
+    try {
+      // Blocks for the whole hold; the final transcript arrives via onResult
+      // and is handled in [_onFinalTranscript]. After this returns the state is
+      // already thinking/speaking/idle, so we don't touch it here.
+      await _speech.startListening();
+    } catch (e) {
+      debugPrint('[STT] !! startListening error: $e');
+      if (turn == _turn) {
+        _setState(VoiceState.idle);
+        VoiceAnnouncer.announce('শুনতে সমস্যা হয়েছে।');
+      }
+    }
   }
 
-  /// Stop listening
+  /// Button **up**. Finalizes the current utterance (tail-drain → transcript).
   Future<void> stopListening() async {
-    debugPrint('[STT] <<< stopListening() — requesting final result');
+    if (_state != VoiceState.listening) return;
+    debugPrint('[STT] <<< stopListening() — finalizing');
+    // Reflect "wrapping up" immediately; the transcript handler decides whether
+    // there's anything to process.
+    _setState(VoiceState.thinking);
     await _speech.stopListening();
-    _isListening = false;
-    notifyListeners();
+  }
+
+  void _onFinalTranscript(String text) {
+    final turn = _turn;
+    final trimmed = text.trim();
+
+    if (trimmed.isEmpty) {
+      // Nothing recognised (silence, a too-short press, or an STT error). Never
+      // hang — return to idle and give one short retry cue.
+      debugPrint('[STT] final transcript empty — prompting retry');
+      if (turn == _turn) _setState(VoiceState.idle);
+      VoiceAnnouncer.announce('শুনতে পাইনি, আবার বলুন।');
+      return;
+    }
+
+    _processCommand(trimmed, turn);
   }
 
   /// Short spoken reminder of the main things the user can say, appended
@@ -168,33 +226,32 @@ class VoiceNavigationService extends ChangeNotifier {
   /// always has a way forward.  These all resolve locally (no network), so the
   /// suggestions still work even when the cloud LLM is unreachable.
   static const String _commandHint =
-      'আপনি বলতে পারেন: আমি কোথায়, ব্যাটারি, সাহায্য, অথবা সেটিংস। '
-      'You can say: where am I, battery, help, or settings.';
+      'আপনি বলতে পারেন: আমি কোথায়, ব্যাটারি, সাহায্য, বা সেটিংস।';
 
-  /// Process the voice command.
+  /// Process the voice command for [turn].
   ///
-  /// Two-tier classification pipeline:
-  ///   1. **Local fuzzy intent matcher** — sub-millisecond, fully offline.
-  ///      Uses the Damerau-Levenshtein / Jaro-Winkler / Sørensen-Dice /
-  ///      TF-IDF cosine / Jaccard ensemble in [IntentMatcher].
-  ///   2. **Groq cloud LLM** — invoked only when the local matcher's
-  ///      confidence is below τ (or when [AppConstants.enableLlm] is true).
-  ///
-  /// Catches ~most common phrasings without an API call; the LLM acts as a
-  /// safety net for novel or ambiguous inputs.
-  Future<void> _processCommand(String text) async {
-    if (text.isEmpty) return;
+  /// Two-tier classification: local fuzzy/CMI matcher first (offline,
+  /// sub-millisecond); cloud LLM only when the matcher is unsure AND the
+  /// network is actually reachable. Every side effect is gated on [turn] so a
+  /// barge-in cleanly discards a stale result, and a watchdog guarantees the
+  /// machine always returns to idle.
+  Future<void> _processCommand(String text, int turn) async {
+    _setState(VoiceState.thinking);
 
-    _isProcessing = true;
-    _isListening = false;
-    notifyListeners();
+    // Final safety net: nothing below may leave the user stuck in a busy state.
+    final watchdog = Timer(const Duration(seconds: 20), () {
+      if (turn != _turn) return;
+      debugPrint('[VOICE] !! watchdog fired — force-reset to idle');
+      _setState(VoiceState.idle);
+      VoiceAnnouncer.announce('সময় শেষ। আবার চেষ্টা করুন।');
+    });
 
     try {
       VoiceCommandResponse response;
 
       _logBlockOpen(text);
 
-      // Tier 1 — local fuzzy match.
+      // Tier 1 — local fuzzy/CMI match (fully offline, sub-millisecond).
       final local = _matcher.match(text);
       _logLocalTier(local);
 
@@ -206,12 +263,20 @@ class VoiceNavigationService extends ChangeNotifier {
           action: response.action,
           reply: response.spokenResponse,
         );
-      } else if (AppConstants.enableLlm) {
-        // Tier 2 — cloud LLM fallback.
+      } else if (AppConstants.enableLlm && await _hasInternet()) {
+        // Tier 2 — cloud LLM fallback, only when the host is actually
+        // reachable so we never block an offline user on a socket timeout.
         _lastWasLocal = false;
         final sw = Stopwatch()..start();
         _logCloudRequest();
-        response = await _groq.processCommand(text);
+        // Belt-and-suspenders timeout on top of GroqService's own.
+        response = await _groq
+            .processCommand(text)
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () =>
+                  VoiceCommandResponse.error('সার্ভারে সংযোগ করা যায়নি।'),
+            );
         sw.stop();
         _logCloudResponse(
           action: response.action,
@@ -219,21 +284,31 @@ class VoiceNavigationService extends ChangeNotifier {
           elapsedMs: sw.elapsedMilliseconds,
         );
       } else {
+        // Tier 3 — local-only fallback: the LLM is disabled, or we're offline.
+        // Answer immediately (no network wait); the no-action branch below
+        // appends the list of commands that work offline.
         _lastWasLocal = false;
+        final offline = AppConstants.enableLlm;
         response = VoiceCommandResponse(
           action: 'none',
-          spokenResponse:
-              'দুঃখিত, বুঝতে পারিনি। '
-              "Sorry, I didn't understand.",
+          spokenResponse: offline
+              ? 'ইন্টারনেট সংযোগ নেই।'
+              : 'দুঃখিত, বুঝতে পারিনি।',
         );
         _logResolution(
-          source: 'STUB',
+          source: offline ? 'OFFLINE' : 'STUB',
           action: response.action,
           reply: response.spokenResponse,
         );
       }
 
       _logBlockClose();
+
+      // Barged-in while thinking? Drop this result — the new turn owns things.
+      if (turn != _turn) {
+        debugPrint('[VOICE] result superseded by newer turn — discarding');
+        return;
+      }
 
       _lastResponse = response.spokenResponse;
       final action = _parseAction(response.action);
@@ -242,19 +317,24 @@ class VoiceNavigationService extends ChangeNotifier {
       if (action == VoiceAction.describeScene) {
         // Answer from the live fusion window instead of speaking the canned
         // intent reply — this is what makes "what's in front of me?" useful.
-        toSpeak = SensorFusionService.instance.getSceneDescription(
-          SettingsService.instance.languageMode,
-        );
+        toSpeak = SensorFusionService.instance.getSceneDescription();
         _lastResponse = toSpeak;
       } else if (action == VoiceAction.none) {
-        // When a command resolves to no action the user is at a dead end —
-        // append a short reminder of what they CAN say so a voice-only user
-        // isn't left guessing.  (Command replies are our own voice → our TTS.)
+        // Dead end — append a short reminder of what the user CAN say.
         toSpeak = '${response.spokenResponse} $_commandHint';
       } else {
         toSpeak = response.spokenResponse;
       }
-      await VoiceAnnouncer.speak(toSpeak);
+
+      // Speak the reply. Interruptible: a button press calls _tts.stop(), which
+      // resolves this await early, and the turn check below discards the rest.
+      _setState(VoiceState.speaking);
+      await VoiceAnnouncer.speak(
+        toSpeak,
+      ).timeout(const Duration(seconds: 15), onTimeout: () {});
+
+      // Barged-in during playback? Don't navigate on an abandoned turn.
+      if (turn != _turn) return;
 
       // describeScene is answered in-place above; everything else that maps to
       // a real action routes through the navigation callback.
@@ -262,15 +342,36 @@ class VoiceNavigationService extends ChangeNotifier {
         onNavigationAction?.call(action);
       }
     } catch (e) {
-      _error = 'Processing error: $e';
       debugPrint('[VOICE] !! processing error: $e');
       _logBlockClose();
-      await VoiceAnnouncer.announce(
-        'দুঃখিত, একটি সমস্যা হয়েছে। Sorry, there was an error. $_commandHint',
-      );
+      if (turn == _turn) {
+        _error = 'Processing error: $e';
+        await VoiceAnnouncer.announce('দুঃখিত, একটি সমস্যা হয়েছে। $_commandHint');
+      }
     } finally {
-      _isProcessing = false;
-      notifyListeners();
+      watchdog.cancel();
+      // Only the current turn may close the machine — a barge-in turn owns the
+      // state now and must not be reset out from under itself.
+      if (turn == _turn &&
+          (_state == VoiceState.thinking || _state == VoiceState.speaking)) {
+        _setState(VoiceState.idle);
+      }
+    }
+  }
+
+  /// Fast reachability probe for the cloud LLM host. A DNS lookup bounded by a
+  /// short timeout distinguishes "no internet" (airplane mode, Wi-Fi off,
+  /// captive portal) from "online" without a plugin dependency — so an offline
+  /// user gets an instant local answer instead of waiting on a socket timeout
+  /// while stuck in the processing state.
+  Future<bool> _hasInternet() async {
+    try {
+      final r = await InternetAddress.lookup(
+        'api.groq.com',
+      ).timeout(const Duration(seconds: 3));
+      return r.isNotEmpty && r.first.rawAddress.isNotEmpty;
+    } catch (_) {
+      return false;
     }
   }
 
@@ -369,6 +470,8 @@ class VoiceNavigationService extends ChangeNotifier {
   }) {
     final tag = source == 'LOCAL'
         ? '>> RESOLVED via LOCAL  (no API call)'
+        : source == 'OFFLINE'
+        ? '>> RESOLVED via OFFLINE (local-only, no network)'
         : '>> RESOLVED via STUB   (LLM disabled)';
     debugPrint(tag);
     debugPrint('  action   : $action');

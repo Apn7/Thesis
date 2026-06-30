@@ -1,7 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-// import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa; // Bengali STT — disabled to reduce APK size
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'core/theme/app_theme.dart';
 import 'core/navigation/app_routes.dart';
 import 'presentation/screens/home_screen.dart';
@@ -12,12 +14,17 @@ import 'presentation/screens/splash_screen.dart';
 import 'presentation/screens/vision_demo_screen.dart';
 import 'presentation/screens/pi_vision_screen.dart';
 import 'services/hardware_key_service.dart';
+import 'services/stt/stt_engine_factory.dart';
 import 'services/voice_navigation_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // sherpa.initBindings(); // Bengali STT — disabled to reduce APK size
+  // Initialise sherpa-onnx native bindings, then pre-warm the offline Bengali
+  // STT model (copy ~91 MB from assets + load the recognizer) in the
+  // background so the first push-to-talk isn't blocked on a cold model load.
+  sherpa.initBindings();
+  unawaited(SttEngineFactory.getEngine('bn').initialize());
 
   // Load environment variables from .env
   await dotenv.load(fileName: ".env");
@@ -37,18 +44,13 @@ void main() async {
   );
 
   // Volume keys (up or down) act as the global push-to-talk button while the
-  // app is in the foreground: hold to listen, release to submit.
+  // app is in the foreground: hold to listen, release to submit. Pressing while
+  // the agent is thinking or speaking is a *barge-in* — VoiceNavigationService
+  // silences the reply and starts a fresh turn — so the handlers are
+  // unconditional and the state machine owns all the guarding.
   HardwareKeyService.instance.setVolumeKeyHandlers(
-    onDown: () {
-      final voice = VoiceNavigationService.instance;
-      if (!voice.isListening && !voice.isProcessing) {
-        voice.startListening();
-      }
-    },
-    onUp: () {
-      final voice = VoiceNavigationService.instance;
-      if (voice.isListening) voice.stopListening();
-    },
+    onDown: () => VoiceNavigationService.instance.startListening(),
+    onUp: () => VoiceNavigationService.instance.stopListening(),
   );
 
   runApp(const SmartCaneApp());
@@ -60,7 +62,7 @@ class SmartCaneApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'স্মার্ট ক্যান • Smart Cane',
+      title: 'Smart Cane',
       debugShowCheckedModeBanner: false,
 
       // Theme

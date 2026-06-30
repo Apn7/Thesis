@@ -12,13 +12,8 @@ class HelpScreen extends StatelessWidget {
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: 'সাহায্য। Help',
-          child: const Column(
-            children: [
-              Text('সাহায্য'),
-              Text('Help', style: TextStyle(fontSize: 12)),
-            ],
-          ),
+          label: 'সাহায্য',
+          child: const Text('সাহায্য'),
         ),
       ),
       body: SafeArea(
@@ -47,23 +42,10 @@ class HelpScreen extends StatelessWidget {
                             color: AppColors.primary,
                           ),
                     ),
-                    SizedBox(height: AppConstants.spacingXs),
-                    Text(
-                      'Welcome!',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
                     SizedBox(height: AppConstants.spacingM),
                     const Text(
-                      'এই অ্যাপ্লিকেশনটি ভয়েস কমান্ড ব্যবহার করে নেভিগেট করার জন্য ডিজাইন করা হয়েছে।',
+                      'এই অ্যাপটি ভয়েস কমান্ড দিয়ে চলাচলের জন্য তৈরি।',
                       textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: AppConstants.spacingXs),
-                    const Text(
-                      'This app is designed to navigate using voice commands.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSecondary),
                     ),
                   ],
                 ),
@@ -73,16 +55,13 @@ class HelpScreen extends StatelessWidget {
             SizedBox(height: AppConstants.spacingXl),
 
             // Quick Start Guide
-            _buildSectionHeader(context, 'দ্রুত শুরু / Quick Start'),
+            _buildSectionHeader(context, 'দ্রুত শুরু'),
 
             _buildStepCard(
               context,
               step: '১',
-              stepEn: '1',
               title: 'হোম স্ক্রিনে যান',
-              titleEn: 'Go to Home Screen',
-              description: 'অ্যাপটি খুলুন এবং "শুরু করুন" বোতামে ট্যাপ করুন।',
-              descriptionEn: 'Open the app and tap the "Start" button.',
+              description: 'অ্যাপ খুললেই আপনি হোম স্ক্রিনে চলে আসবেন।',
               icon: Icons.home,
               color: AppColors.primary,
             ),
@@ -90,11 +69,8 @@ class HelpScreen extends StatelessWidget {
             _buildStepCard(
               context,
               step: '২',
-              stepEn: '2',
               title: 'ভয়েস কমান্ড বলুন',
-              titleEn: 'Speak Voice Command',
-              description: 'মাইক্রোফোন সক্রিয় করুন এবং আপনার কমান্ড বলুন।',
-              descriptionEn: 'Activate the microphone and speak your command.',
+              description: 'ভলিউম বোতাম চেপে ধরে আপনার কমান্ড বলুন।',
               icon: Icons.mic,
               color: AppColors.accent,
             ),
@@ -102,11 +78,8 @@ class HelpScreen extends StatelessWidget {
             _buildStepCard(
               context,
               step: '৩',
-              stepEn: '3',
-              title: 'অডিও ফিডব্যাক শুনুন',
-              titleEn: 'Hear Audio Feedback',
-              description: 'অ্যাপ্লিকেশন আপনাকে অডিও মাধ্যমে গাইড করবে।',
-              descriptionEn: 'The app will guide you through audio.',
+              title: 'অডিও উত্তর শুনুন',
+              description: 'অ্যাপ অডিও উত্তরের মাধ্যমে আপনাকে পথ দেখাবে।',
               icon: Icons.volume_up,
               color: AppColors.info,
             ),
@@ -114,53 +87,50 @@ class HelpScreen extends StatelessWidget {
             SizedBox(height: AppConstants.spacingXl),
 
             // Voice Commands List
-            _buildSectionHeader(context, 'ভয়েস কমান্ড / Voice Commands'),
+            _buildSectionHeader(context, 'ভয়েস কমান্ড'),
 
             Card(
               child: Column(
                 children: [
                   _buildCommandTile(
                     'আমি কোথায়?',
-                    'Where am I?',
                     'আপনার বর্তমান অবস্থান দেখায়',
-                    'Shows your current location',
                     Icons.location_on,
                     AppColors.info,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
                     'সেটিংস',
-                    'Settings',
                     'সেটিংস মেনু খোলে',
-                    'Opens settings menu',
                     Icons.settings,
                     AppColors.primary,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
                     'সাহায্য',
-                    'Help',
-                    'এই সাহায্য পৃষ্ঠা দেখায়',
-                    'Shows this help page',
+                    'এই সাহায্য পেইজ দেখায়',
                     Icons.help,
                     AppColors.success,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
-                    'হোম / শুরু',
-                    'Home / Start',
-                    'হোম পৃষ্ঠায় ফিরে যায়',
-                    'Returns to home page',
+                    'হোম',
+                    'হোম স্ক্রিনে ফিরে যায়',
                     Icons.home,
                     AppColors.accent,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
-                    'থামো',
-                    'Stop',
-                    'বর্তমান ভয়েস বন্ধ করে',
-                    'Stops current voice',
-                    Icons.stop,
+                    'সামনে কী আছে?',
+                    'সামনের সনাক্ত হওয়া বস্তু বর্ণনা করে',
+                    Icons.visibility,
+                    AppColors.warning,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'ব্যাটারি',
+                    'ব্যাটারির পরিমাণ জানায়',
+                    Icons.battery_charging_full,
                     AppColors.error,
                   ),
                 ],
@@ -170,29 +140,26 @@ class HelpScreen extends StatelessWidget {
             SizedBox(height: AppConstants.spacingXl),
 
             // Tips Section
-            _buildSectionHeader(context, 'টিপস / Tips'),
+            _buildSectionHeader(context, 'পরামর্শ'),
 
             _buildTipCard(
               context,
               icon: Icons.lightbulb_outline,
-              tip: 'স্পষ্টভাবে এবং ধীরে ধীরে কথা বলুন',
-              tipEn: 'Speak clearly and slowly',
+              tip: 'স্পষ্টভাবে ও স্বাভাবিক গতিতে বলুন',
               color: AppColors.warning,
             ),
 
             _buildTipCard(
               context,
               icon: Icons.headphones,
-              tip: 'শান্ত পরিবেশে ব্যবহার করুন',
-              tipEn: 'Use in a quiet environment',
+              tip: 'ভালো ফলের জন্য শান্ত পরিবেশে ব্যবহার করুন',
               color: AppColors.info,
             ),
 
             _buildTipCard(
               context,
               icon: Icons.battery_charging_full,
-              tip: 'ব্যাটারি সেভার মোড বেশি ব্যাটারি সাশ্রয় করে',
-              tipEn: 'Battery saver mode conserves more battery',
+              tip: 'ব্যাটারি সেভার মোডে কম্পন কম হয়',
               color: AppColors.success,
             ),
 
@@ -213,28 +180,15 @@ class HelpScreen extends StatelessWidget {
                     ),
                     SizedBox(height: AppConstants.spacingM),
                     const Text(
-                      'সাহায্য প্রয়োজন?',
+                      'সাহায্য দরকার?',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: AppConstants.spacingXs),
-                    const Text(
-                      'Need Help?',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
                     SizedBox(height: AppConstants.spacingM),
                     const Text(
-                      'এই একটি থিসিস প্রজেক্ট। আরও তথ্যের জন্য সেটিংসে যান।',
-                      textAlign: TextAlign.center,
-                    ),
-                    SizedBox(height: AppConstants.spacingXs),
-                    const Text(
-                      'This is a thesis project. Go to Settings for more information.',
+                      'এটি একটি থিসিস প্রকল্প। আরও তথ্যের জন্য সেটিংসে যান।',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 12,
@@ -273,11 +227,8 @@ class HelpScreen extends StatelessWidget {
   Widget _buildStepCard(
     BuildContext context, {
     required String step,
-    required String stepEn,
     required String title,
-    required String titleEn,
     required String description,
-    required String descriptionEn,
     required IconData icon,
     required Color color,
   }) {
@@ -314,20 +265,8 @@ class HelpScreen extends StatelessWidget {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  Text(
-                    titleEn,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
                   SizedBox(height: AppConstants.spacingS),
                   Text(description),
-                  Text(
-                    descriptionEn,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -339,9 +278,7 @@ class HelpScreen extends StatelessWidget {
 
   Widget _buildCommandTile(
     String command,
-    String commandEn,
     String description,
-    String descriptionEn,
     IconData icon,
     Color color,
   ) {
@@ -354,9 +291,8 @@ class HelpScreen extends StatelessWidget {
         ),
         child: Icon(icon, color: color),
       ),
-      title: Text('$command / $commandEn'),
-      subtitle: Text('$description\n$descriptionEn'),
-      isThreeLine: true,
+      title: Text(command),
+      subtitle: Text(description),
       contentPadding: EdgeInsets.symmetric(
         horizontal: AppConstants.spacingL,
         vertical: AppConstants.spacingS,
@@ -368,7 +304,6 @@ class HelpScreen extends StatelessWidget {
     BuildContext context, {
     required IconData icon,
     required String tip,
-    required String tipEn,
     required Color color,
   }) {
     return Card(
@@ -380,21 +315,9 @@ class HelpScreen extends StatelessWidget {
             Icon(icon, color: color, size: AppConstants.iconL),
             SizedBox(width: AppConstants.spacingL),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    tip,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  Text(
-                    tipEn,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
+              child: Text(
+                tip,
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
           ],

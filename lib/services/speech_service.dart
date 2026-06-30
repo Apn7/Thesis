@@ -1,78 +1,42 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
 
-// Sherpa-onnx offline Bengali STT — currently disabled.  The pipeline files
-// remain in lib/services/stt/ so this can be re-enabled later without
-// rewriting anything.  See the commented blocks below for the original
-// dual-engine implementation.
-// import 'stt/audio_pipeline.dart';
-// import 'stt/stt_engine_factory.dart';
+import 'stt/audio_pipeline.dart';
+import 'stt/stt_engine_factory.dart';
 
-/// Speech-to-text orchestrator.
+/// Speech-to-text orchestrator — **offline Bengali only**.
 ///
-/// Currently both `'bn'` (Bengali) and `'en'` (English) route through the
-/// platform/Google built-in speech recognizer via the `speech_to_text`
-/// package.  Bengali uses locale `bn-BD` and falls back to the online
-/// recognizer if the on-device pack isn't installed; English uses `en_US`.
+/// All recognition runs on-device through the sherpa-onnx streaming Zipformer
+/// (Bangla) via [AudioPipeline] → [SherpaEngine]. The platform/Google
+/// `speech_to_text` recognizer is intentionally NOT used: it routes audio to
+/// the cloud and gives no offline guarantee. This service owns the microphone
+/// → VAD → streaming transcription path end-to-end.
 ///
-/// The original offline Bengali back-end (sherpa-onnx Zipformer) is kept in
-/// commented-out form below so it can be re-attached without rebuilding from
-/// scratch.
+/// Push-to-talk contract (unchanged for callers):
+///   * [startListening] begins capture; partial transcripts arrive via
+///     `onResult(text, false)`.
+///   * Releasing the button calls [stopListening], which finalizes the stream;
+///     the final transcript arrives via `onResult(text, true)`.
+///   * Voice-activity detection also auto-finalizes on a short pause, so a user
+///     who speaks then stops gets a result without holding forever.
 class SpeechService {
   static SpeechService? _instance;
 
   // ─── State ────────────────────────────────────────────────────────
   bool _isInitialized = false;
-  bool _isListening = false;
+  bool _isListening = false; // a capture session (run) is in flight
+  bool _cancelled = false; // current session's result should be suppressed
   String _lastRecognizedWords = '';
-  String _currentLocaleId = 'bn'; // Bengali is the default
-  String? _resolvedBengaliLocale;
 
-  // ─── Sherpa offline Bengali back-end (DISABLED) ───────────────────
-  // final AudioPipeline _pipeline = AudioPipeline();
+  /// Completes when the current session's [run] has fully torn down. A new
+  /// [startListening] awaits this after aborting the old session, so we never
+  /// end up with two recorders / overlapping runs (rapid re-press, barge-in
+  /// during the tail-drain).
+  Completer<void>? _sessionDone;
 
-  // ─── Google / Android built-in STT ────────────────────────────────
-  final SpeechToText _androidStt = SpeechToText();
-  bool _androidSttAvailable = false;
-
-  /// Whether to request on-device recognition.  Starts true; flipped to false
-  /// permanently after the first [error_language_unavailable] so subsequent
-  /// sessions fall back to the online recognizer automatically.
-  bool _useOnDevice = true;
-
-  /// Set when [error_language_unavailable] fires mid-session so
-  /// [_startAndroidListening] can retry with onDevice:false.
-  bool _languageUnavailableRetry = false;
-
-  /// Completer used to block [startListening] until the Android STT session
-  /// finishes (either a final result, silence timeout, or cancellation).
-  Completer<void>? _androidSttCompleter;
-
-  /// True between [startListening] and [stopListening]/[cancelListening].
-  /// While set, the Android recognizer is restarted transparently on any
-  /// transient error (cold-start race, silence timeout, no-match) so that
-  /// "hold to talk" actually waits for the user to speak.
-  bool _pttHoldActive = false;
-
-  /// Set inside the global [SpeechToText] error handler when a transient
-  /// failure fires during PTT — picked up by the listen loop to decide
-  /// whether to silently restart the recognizer instead of bubbling up.
-  bool _retryRequested = false;
-
-  /// Errors that the Android speech recognizer raises for "nothing was said"
-  /// or "service wasn't ready" — these are normal in push-to-talk and must
-  /// not abort the user's hold.  Anything outside this set is surfaced as a
-  /// real error.
-  static const Set<String> _retryableErrors = {
-    'error_no_match',
-    'error_speech_timeout',
-    'error_client',
-    'error_recognizer_busy',
-  };
+  // ─── Offline Bengali sherpa-onnx back-end ─────────────────────────
+  final AudioPipeline _pipeline = AudioPipeline();
 
   // ─── Callbacks ────────────────────────────────────────────────────
   Function(String text, bool isFinal)? onResult;
@@ -86,333 +50,132 @@ class SpeechService {
   }
 
   SpeechService._() {
-    // Sherpa pipeline wiring — disabled along with the Bengali offline engine.
-    // _pipeline.onStatus = (status) => onStatus?.call(status);
-    // _pipeline.onError = (error) => onError?.call(error);
-    // _pipeline.onPartialResult = (text) => onResult?.call(text, false);
+    _pipeline.onStatus = (status) => onStatus?.call(status);
+    _pipeline.onPartialResult = (text) => onResult?.call(text, false);
+    _pipeline.onError = (error) {
+      // Keep the raw cause in the log; speak a clean Bengali sentence.
+      debugPrint('SpeechService pipeline error: $error');
+      onError?.call('শুনতে পারিনি। আবার চেষ্টা করুন।');
+    };
   }
 
   bool get isListening => _isListening;
   bool get isInitialized => _isInitialized;
   String get lastWords => _lastRecognizedWords;
 
-  /// Resolve the platform STT locale for the active app locale.
-  String get _platformLocaleId {
-    if (_currentLocaleId == 'en') return 'en_US';
-    return _resolvedBengaliLocale ?? 'bn_BD';
-  }
-
   // ─── Initialisation ───────────────────────────────────────────────
 
-  /// Prepare the Google/Android speech recognizer for listening.
+  /// Prepare the offline Bengali recognizer for listening.
   ///
-  /// Returns `false` and fires [onError] on failure.
+  /// On first call this copies the bundled ~91 MB model out of assets and loads
+  /// the sherpa-onnx recognizer — slow, so it's best triggered at app startup
+  /// (see `main.dart`'s pre-warm) rather than on the first push-to-talk.
+  /// Also requests microphone permission. Returns `false` and fires [onError]
+  /// on failure.
   Future<bool> initialize() async {
     if (_isInitialized) return true;
 
     try {
-      return await _initAndroidStt();
+      if (!await _pipeline.hasPermission()) {
+        onError?.call('মাইক্রোফোন অনুমতি প্রয়োজন।');
+        return false;
+      }
 
-      // Sherpa offline Bengali path — disabled.
-      // if (_currentLocaleId == 'bn') {
-      //   if (!await _pipeline.hasPermission()) {
-      //     onError?.call(
-      //       'মাইক্রোফোনের অনুমতি দেওয়া হয়নি / Microphone permission not granted',
-      //     );
-      //     return false;
-      //   }
-      //   await SttEngineFactory.getEngine('bn').initialize();
-      //   _isInitialized = true;
-      //   return true;
-      // }
+      final engine = SttEngineFactory.getEngine('bn');
+      final ready = engine.isInitialized || await engine.initialize();
+      if (!ready) {
+        onError?.call('ভয়েস মডেল লোড করা যায়নি।');
+        return false;
+      }
+
+      _isInitialized = true;
+      debugPrint('SpeechService: offline Bengali STT initialized.');
+      return true;
     } catch (e) {
       debugPrint('SpeechService init error: $e');
-      onError?.call(
-        'ভয়েস রিকগনিশন শুরু করতে ব্যর্থ / Failed to initialize speech recognition: $e',
-      );
+      onError?.call('ভয়েস সিস্টেম চালু করা যায়নি।');
       return false;
     }
-  }
-
-  /// Initialize the Android/Google built-in STT back-end.
-  ///
-  /// Sets global [onError]/[onStatus] callbacks on the [SpeechToText]
-  /// instance — these fire for every session, not just initialization.
-  Future<bool> _initAndroidStt() async {
-    _androidSttAvailable = await _androidStt.initialize(
-      onError: (SpeechRecognitionError error) {
-        debugPrint(
-          'AndroidSTT error: ${error.errorMsg} (permanent=${error.permanent})',
-        );
-
-        // Locale pack missing — retry this session over the online recognizer.
-        if ((error.errorMsg == 'error_language_unavailable' ||
-                error.errorMsg == 'error_language_not_supported') &&
-            _useOnDevice) {
-          debugPrint(
-            'AndroidSTT: on-device pack unavailable, retrying online.',
-          );
-          _useOnDevice = false;
-          _languageUnavailableRetry = true;
-          _completeAndroidStt();
-          return;
-        }
-
-        // Transparent retry while the user is still holding the PTT button:
-        // covers the cold-start race (error_client) and the no-speech-yet
-        // case (error_no_match / error_speech_timeout).
-        if (_pttHoldActive && _retryableErrors.contains(error.errorMsg)) {
-          debugPrint(
-            'AndroidSTT: transient "${error.errorMsg}" while PTT held — '
-            'silent retry',
-          );
-          _retryRequested = true;
-          _completeAndroidStt();
-          return;
-        }
-
-        // Anything else is a real error — bubble up a clean spoken sentence.
-        // Keep the raw Android code in the log only; TTS would otherwise try
-        // to pronounce strings like "error_audio_error" literally.
-        debugPrint('AndroidSTT: real error ${error.errorMsg}');
-        onError?.call(
-          'ভয়েস শোনা যায়নি, আবার চেষ্টা করুন। '
-          "Couldn't hear you. Please try again.",
-        );
-        _isListening = false;
-        _completeAndroidStt();
-      },
-      onStatus: (String status) {
-        debugPrint('AndroidSTT status: $status');
-        if (status == SpeechToText.listeningStatus) {
-          onStatus?.call('listening');
-        } else if (status == SpeechToText.doneStatus ||
-            status == SpeechToText.notListeningStatus) {
-          // Only mark the session done from a status event when we are NOT
-          // mid-PTT-retry — otherwise the retry would race against the
-          // session teardown.
-          if (!_retryRequested) _isListening = false;
-          _completeAndroidStt();
-        }
-      },
-    );
-
-    if (!_androidSttAvailable) {
-      onError?.call(
-        'এই ডিভাইসে ভয়েস রিকগনিশন সমর্থিত নয়।\n'
-        'Speech recognition is not available on this device.',
-      );
-      return false;
-    }
-
-    try {
-      final locales = await _androidStt.locales();
-      for (final locale in locales) {
-        if (locale.localeId.startsWith('bn')) {
-          _resolvedBengaliLocale = locale.localeId;
-          debugPrint(
-            'SpeechService: Found Bengali locale -> ${locale.localeId}',
-          );
-          break; // Prefer the first one found (e.g., bn_BD, bn_IN)
-        }
-      }
-    } catch (e) {
-      debugPrint('SpeechService: Failed to fetch locales: $e');
-    }
-
-    _isInitialized = true;
-    debugPrint('SpeechService: Android STT initialized.');
-    return true;
   }
 
   // ─── Recording + Transcription ────────────────────────────────────
 
-  /// Begin listening for speech via Google/Android STT.
+  /// Begin listening for Bengali speech.
   ///
-  /// Partial results arrive via [onResult](text, false).
-  /// Final result arrives via [onResult](text, true).
-  /// Awaiting this method blocks until the full session is complete.
+  /// Awaiting this blocks until the session completes (VAD pause, max duration,
+  /// or [stopListening]/[cancelListening]). Partial transcripts stream via
+  /// `onResult(text, false)`; the final transcript via `onResult(text, true)`.
   Future<void> startListening() async {
-    if (!_isInitialized) {
-      final success = await initialize();
-      if (!success) return;
+    // Barge-in / rapid re-press: abort any in-flight session and wait for it to
+    // fully tear down before starting a new one, so two recorders never overlap
+    // and the old (abandoned) transcript is suppressed.
+    if (_isListening) {
+      _cancelled = true;
+      await _pipeline.cancel();
+      await _sessionDone?.future;
     }
-    if (_isListening) return;
+
+    if (!_isInitialized) {
+      final ok = await initialize();
+      if (!ok) return;
+    }
 
     _lastRecognizedWords = '';
+    _cancelled = false;
     _isListening = true;
-    _pttHoldActive = true;
+    final done = Completer<void>();
+    _sessionDone = done;
 
-    await _startAndroidListening();
-
-    // Sherpa offline Bengali path — disabled.
-    // if (_currentLocaleId == 'bn') {
-    //   try {
-    //     final text = await _pipeline.run();
-    //     _lastRecognizedWords = text;
-    //     onResult?.call(text, true);
-    //   } catch (e) {
-    //     debugPrint('SpeechService Bengali error: $e');
-    //     onError?.call('ট্রান্সক্রিপশন ত্রুটি / Transcription error: $e');
-    //   } finally {
-    //     _isListening = false;
-    //   }
-    // }
-  }
-
-  /// Start an Android STT session and wait for it to complete.
-  ///
-  /// Loops the recognizer transparently for two reasons:
-  ///   1. **Cold-start race** — the very first `listen()` after process
-  ///      launch sometimes fails with `error_client` because the system
-  ///      `SpeechRecognizer` service hasn't fully bound yet.  A second
-  ///      attempt almost always succeeds.
-  ///   2. **Push-to-talk semantics** — if the user holds the button without
-  ///      speaking, Android raises `error_no_match` /
-  ///      `error_speech_timeout`.  We restart the recognizer silently so
-  ///      that "hold to talk" really waits for speech.
-  ///
-  /// The loop exits when:
-  ///   - a final transcription result arrives,
-  ///   - the user releases the button ([_pttHoldActive] becomes false),
-  ///   - or a non-retryable error occurs.
-  ///
-  /// `error_language_unavailable` is also handled here — once, by flipping
-  /// to the online recognizer and retrying.
-  Future<void> _startAndroidListening() async {
-    _languageUnavailableRetry = false;
-    bool gotFinalResult = false;
-
-    onStatus?.call('listening');
-
-    while (true) {
-      _retryRequested = false;
-      final completer = Completer<void>();
-      _androidSttCompleter = completer;
-
-      await _androidStt.listen(
-        onResult: (SpeechRecognitionResult result) {
-          onResult?.call(result.recognizedWords, result.finalResult);
-          if (result.finalResult) {
-            gotFinalResult = true;
-            _lastRecognizedWords = result.recognizedWords;
-            _completeAndroidStt();
-          }
-        },
-        // Long windows on purpose — the PTT button controls when listening
-        // stops, not these timeouts.  They only act as a hard ceiling.
-        listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 30),
-        localeId: _platformLocaleId,
-        listenOptions: SpeechListenOptions(
-          cancelOnError: true,
-          partialResults: true,
-          onDevice: _useOnDevice,
-        ),
-      );
-
-      await completer.future;
-
-      // (a) On-device pack missing → retry online (one-shot, then sticky).
-      if (_languageUnavailableRetry) {
-        _languageUnavailableRetry = false;
-        debugPrint('AndroidSTT: retrying with onDevice=false');
-        continue;
+    try {
+      // Pure push-to-talk: the volume button delimits the utterance, so VAD
+      // silence auto-stop is disabled — a user who pauses mid-sentence or
+      // speaks softly is never cut off. Release ([stopListening]) ends it.
+      final text = await _pipeline.run(autoStopOnSilence: false);
+      if (_cancelled) return; // superseded by a newer session — drop result
+      _lastRecognizedWords = text;
+      onResult?.call(text, true);
+      onStatus?.call('done');
+    } catch (e) {
+      debugPrint('SpeechService: session error — $e');
+      if (!_cancelled) {
+        // Deliver an empty final so the agent resets to idle (never hangs).
+        onResult?.call('', true);
       }
-
-      // (b) User got their result → done.
-      if (gotFinalResult) break;
-
-      // (c) Transient error while PTT still held → silent restart.
-      if (_pttHoldActive && _retryRequested) {
-        // Tiny delay — Android needs a moment to release the recognizer
-        // before we can rebind it.
-        await Future<void>.delayed(const Duration(milliseconds: 80));
-        continue;
-      }
-
-      // (d) Released button or unrecoverable error → exit.
-      break;
+    } finally {
+      _isListening = false;
+      if (!done.isCompleted) done.complete();
     }
-
-    if (!gotFinalResult) {
-      onResult?.call(_lastRecognizedWords, true);
-    }
-
-    onStatus?.call('done');
-    _isListening = false;
-    _pttHoldActive = false;
   }
 
-  /// Complete (or no-op if already done) the active Android STT completer.
-  void _completeAndroidStt() {
-    final c = _androidSttCompleter;
-    _androidSttCompleter = null;
-    if (!(c?.isCompleted ?? true)) c!.complete();
-  }
-
-  /// Stop recording and request the final result.
+  /// Stop recording and finalize — the in-flight [startListening] resolves with
+  /// the final transcript. Called on push-to-talk release.
+  ///
+  /// Uses [AudioPipeline.finish] (not [AudioPipeline.cancel]) so the mic keeps
+  /// capturing for a short tail window: the audio still buffered upstream (the
+  /// user's last word) drains into the recognizer before we finalize, instead
+  /// of being clipped the instant the button is released.
   Future<void> stopListening() async {
     if (!_isListening) return;
-
-    // PTT released → break the retry loop in _startAndroidListening so the
-    // recognizer doesn't auto-restart after stop().
-    _pttHoldActive = false;
-
-    // stop() asks the recognizer for a final result; callbacks handle cleanup.
-    await _androidStt.stop();
-
-    // Sherpa offline path — disabled.
-    // if (_currentLocaleId == 'bn') {
-    //   await _pipeline.cancel();
-    //   _isListening = false;
-    //   onStatus?.call('done');
-    // }
+    await _pipeline.finish(); // tail-drain → completes run() → finalize → text
   }
 
-  /// Cancel recording without delivering a result.
+  /// Cancel recording and discard the result (no final `onResult`).
   Future<void> cancelListening() async {
     if (!_isListening) return;
-
-    _pttHoldActive = false;
-    await _androidStt.cancel();
-    _completeAndroidStt();
-
-    // Sherpa offline path — disabled.
-    // if (_currentLocaleId == 'bn') {
-    //   await _pipeline.cancel();
-    // }
-
-    _isListening = false;
+    _cancelled = true;
+    await _pipeline.cancel();
     _lastRecognizedWords = '';
-    onStatus?.call('notListening');
   }
 
-  // ─── Locale ───────────────────────────────────────────────────────
+  // ─── Locale (compat shims — the app is Bengali-only) ──────────────
 
-  /// Switch the active locale to [localeId] (`'bn'` or `'en'`).
-  ///
-  /// Cancels any active session.  Both locales share the Android STT
-  /// recognizer, so we do not need to dispose engines — just reset the flag
-  /// so the next [startListening] reconfigures with the new locale.
+  /// No-op — recognition is fixed to offline Bengali. Kept for call-site
+  /// compatibility.
   Future<void> setLocale(String localeId) async {
-    assert(
-      localeId == 'bn' || localeId == 'en',
-      'setLocale: localeId must be bn or en',
-    );
-    if (localeId == _currentLocaleId) return;
-
     if (_isListening) await cancelListening();
-
-    // Sherpa engine disposal — disabled along with the Bengali offline path.
-    // if (_currentLocaleId == 'bn') {
-    //   SttEngineFactory.disposeEngine('bn');
-    // }
-
-    _currentLocaleId = localeId;
-    debugPrint('SpeechService: locale set to $localeId');
+    debugPrint('SpeechService: locale fixed at bn (setLocale ignored)');
   }
 
-  /// Available locale identifiers.
-  Future<List<String>> getAvailableLocales() async => ['bn', 'en'];
+  /// Available locale identifiers — Bengali only.
+  Future<List<String>> getAvailableLocales() async => ['bn'];
 }

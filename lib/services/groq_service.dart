@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -49,19 +50,24 @@ class GroqService {
         ..._conversationHistory,
       ];
 
-      final response = await http.post(
-        Uri.parse('${ApiConfig.groqBaseUrl}/chat/completions'),
-        headers: {
-          'Authorization': 'Bearer ${ApiConfig.groqApiKey}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'model': ApiConfig.llamaModel,
-          'messages': messages,
-          'temperature': 0.3,
-          'max_tokens': 200,
-        }),
-      );
+      // Hard timeout so a flaky/half-open connection can never leave the user
+      // stuck in the "processing" state. The caller also gates this on
+      // reachability, so this mainly guards the connected-but-no-internet case.
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.groqBaseUrl}/chat/completions'),
+            headers: {
+              'Authorization': 'Bearer ${ApiConfig.groqApiKey}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'model': ApiConfig.llamaModel,
+              'messages': messages,
+              'temperature': 0.3,
+              'max_tokens': 200,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode != 200) {
         debugPrint('Groq API error ${response.statusCode}: ${response.body}');
@@ -88,9 +94,13 @@ class GroqService {
         }
       }
       return VoiceCommandResponse(action: 'none', spokenResponse: content);
+    } on TimeoutException {
+      debugPrint('Groq error: request timed out');
+      return VoiceCommandResponse.error('সার্ভারে সংযোগ করা যায়নি।');
     } catch (e, st) {
+      // Never speak the raw exception (TTS would read the stack/URL aloud).
       debugPrint('Groq error: $e\n$st');
-      return VoiceCommandResponse.error('সংযোগে সমস্যা: $e');
+      return VoiceCommandResponse.error('ইন্টারনেট সংযোগে সমস্যা।');
     }
   }
 

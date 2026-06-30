@@ -196,9 +196,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (_distanceSource.state == SensorLinkState.connected &&
           !_sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = true;
-        _voiceService.speak(
-          'স্মার্ট ক্যান সেন্সর সংযুক্ত। Cane sensor connected.',
-        );
+        _voiceService.speak('লাঠির সেন্সর সংযুক্ত হয়েছে।');
       } else if (_distanceSource.state == SensorLinkState.disconnected &&
           _sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = false;
@@ -208,9 +206,7 @@ class _HomeScreenState extends State<HomeScreen>
         _voiceService.stopSpeaking();
         _stopAlertTone();
         _lastObstacleVerdict = ObstacleVerdict.noData;
-        _voiceService.speak(
-          'স্মার্ট ক্যান সেন্সর বিচ্ছিন্ন। Cane sensor disconnected.',
-        );
+        _voiceService.speak('লাঠির সেন্সর বিচ্ছিন্ন হয়েছে।');
       }
     });
 
@@ -250,24 +246,16 @@ class _HomeScreenState extends State<HomeScreen>
   //   }
   // }
 
-  /// Bangla-digit conversion (০-৯) so spoken distances pronounce correctly
-  /// in Bangla TTS — ASCII digits often get read in English even inside an
-  /// otherwise-Bangla utterance.
-  String _bnDigits(int n) {
-    const bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-    return n.toString().split('').map((d) => bn[int.parse(d)]).join();
-  }
-
   /// Build the escalation utterance: level word + live distance rounded to
   /// 10 cm.  Rounding stabilises the announcement near threshold boundaries
-  /// (47 cm and 53 cm both say "৫০") and keeps the spoken number short.
+  /// (47 cm and 53 cm both say "50") and keeps the spoken number short.
   String _escalationSpeech(ObstacleVerdict v) {
     final base = v.speechText;
     if (base.isEmpty) return '';
     final d = _distanceSource.latestDistance;
     if (d == null || d <= 0) return base;
     final rounded = (d / 10).round() * 10;
-    return '$base ${_bnDigits(rounded)} সেন্টিমিটার';
+    return '$base — $rounded সেন্টিমিটার';
   }
 
   /// Trigger phone vibration matching the current ESP32 distance verdict.
@@ -388,13 +376,11 @@ class _HomeScreenState extends State<HomeScreen>
           Navigator.pushNamed(context, AppRoutes.help);
           break;
         case VoiceAction.speakBattery:
-          _voiceService.speak('ব্যাটারি ৮৫ শতাংশ। Battery is 85 percent.');
+          _voiceService.speak('ব্যাটারি ৮৫ শতাংশ।');
           break;
         case VoiceAction.speakTime:
           final now = TimeOfDay.now();
-          _voiceService.speak(
-            'সময় ${now.hour}:${now.minute}। Time is ${now.format(context)}.',
-          );
+          _voiceService.speak('এখন সময় ${now.format(context)}।');
           break;
         case VoiceAction.describeScene:
           // Handled in-place by VoiceNavigationService (speaks the fusion
@@ -615,7 +601,7 @@ class _HomeScreenState extends State<HomeScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'দূরত্ব / Distance',
+                        'দূরত্ব',
                         style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
@@ -659,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          d == null ? '— cm' : '${d.toStringAsFixed(1)} cm',
+                          d == null ? '— সেমি' : '${d.toStringAsFixed(1)} সেমি',
                           style: Theme.of(context).textTheme.displaySmall
                               ?.copyWith(
                                 fontWeight: FontWeight.bold,
@@ -700,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen>
                 child: OutlinedButton.icon(
                   onPressed: () => _distanceSource.startScanning(),
                   icon: const Icon(Icons.bluetooth_searching),
-                  label: const Text('সেন্সর স্ক্যান করুন / Scan for sensor'),
+                  label: const Text('সেন্সর খুঁজুন'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: BorderSide(color: AppColors.primary),
@@ -859,18 +845,8 @@ class _HomeScreenState extends State<HomeScreen>
       appBar: AppBar(
         title: Semantics(
           header: true,
-          label: '${AppConstants.appName}। ${AppConstants.appNameEn}',
-          child: Column(
-            children: [
-              Text(AppConstants.appName),
-              Text(
-                AppConstants.appNameEn,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: Colors.white.withValues(alpha: 0.9),
-                ),
-              ),
-            ],
-          ),
+          label: AppConstants.appName,
+          child: Text(AppConstants.appName),
         ),
         centerTitle: true,
         elevation: 0,
@@ -910,47 +886,30 @@ class _HomeScreenState extends State<HomeScreen>
                               Semantics(
                                 liveRegion: true,
                                 container: true,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      _voiceService.isProcessing
-                                          ? 'চিন্তা করছি...'
-                                          : _voiceService.isListening
-                                          ? 'শুনছি...'
-                                          : 'ভয়েস কমান্ড',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .headlineSmall
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: _voiceService.isListening
-                                                ? AppColors.accent
-                                                : _voiceService.isProcessing
-                                                ? AppColors.info
-                                                : AppColors.primary,
-                                          ),
-                                    ),
-                                    SizedBox(height: AppConstants.spacingXs),
-                                    Text(
-                                      _voiceService.isProcessing
-                                          ? 'Processing...'
-                                          : _voiceService.isListening
-                                          ? 'Listening...'
-                                          : 'Voice Command',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: AppColors.textSecondary,
-                                          ),
-                                    ),
-                                  ],
+                                child: Text(
+                                  _voiceService.isListening
+                                      ? 'শুনছি...'
+                                      : _voiceService.isProcessing
+                                      ? 'প্রসেস হচ্ছে...'
+                                      : _voiceService.isSpeaking
+                                      ? 'বলছি...'
+                                      : 'ভয়েস কমান্ড',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: _voiceService.isListening
+                                            ? AppColors.accent
+                                            : _voiceService.isProcessing
+                                            ? AppColors.info
+                                            : AppColors.primary,
+                                      ),
                                 ),
                               ),
                               SizedBox(height: AppConstants.spacingM),
                               Text(
-                                'কথা বলতে ভলিউম বোতাম চেপে ধরে রাখুন।\nPress and hold the Volume buttons to speak.',
+                                'বলতে ভলিউম বোতাম চেপে ধরে রাখুন।',
                                 textAlign: TextAlign.center,
                                 style: Theme.of(context).textTheme.bodyMedium
                                     ?.copyWith(color: AppColors.textSecondary),
@@ -1057,9 +1016,9 @@ class _HomeScreenState extends State<HomeScreen>
                       // ── Navigation grid ───────────────────────────────────────
                       Semantics(
                         header: true,
-                        label: 'নেভিগেশন অপশন। Navigation options.',
+                        label: 'নেভিগেশন অপশন।',
                         child: Text(
-                          'কোথায় যেতে চান? / Where to go?',
+                          'কোথায় যাবেন?',
                           style: Theme.of(context).textTheme.titleLarge
                               ?.copyWith(fontWeight: FontWeight.bold),
                           textAlign: TextAlign.center,
@@ -1079,7 +1038,7 @@ class _HomeScreenState extends State<HomeScreen>
                           AccessibleActionButton(
                             icon: Icons.location_on,
                             label: 'আমি কোথায়?',
-                            labelEn: 'Where am I?',
+                            labelEn: 'আমি কোথায়?',
                             semanticHint: 'আপনার বর্তমান অবস্থান দেখুন।',
                             onPressed: () => Navigator.pushNamed(
                               context,
@@ -1090,7 +1049,7 @@ class _HomeScreenState extends State<HomeScreen>
                           AccessibleActionButton(
                             icon: Icons.settings,
                             label: 'সেটিংস',
-                            labelEn: 'Settings',
+                            labelEn: 'সেটিংস',
                             semanticHint: 'সেটিংস খুলুন।',
                             onPressed: () => Navigator.pushNamed(
                               context,
@@ -1101,8 +1060,8 @@ class _HomeScreenState extends State<HomeScreen>
                           AccessibleActionButton(
                             icon: Icons.help_outline,
                             label: 'সাহায্য',
-                            labelEn: 'Help',
-                            semanticHint: 'সাহায্য এবং টিউটোরিয়াল।',
+                            labelEn: 'সাহায্য',
+                            semanticHint: 'সাহায্য ও নির্দেশিকা।',
                             onPressed: () =>
                                 Navigator.pushNamed(context, AppRoutes.help),
                             color: AppColors.success,
@@ -1110,21 +1069,18 @@ class _HomeScreenState extends State<HomeScreen>
                           AccessibleActionButton(
                             icon: Icons.battery_charging_full,
                             label: 'ব্যাটারি',
-                            labelEn: 'Battery',
-                            semanticHint: 'ব্যাটারি স্ট্যাটাস।',
+                            labelEn: 'ব্যাটারি',
+                            semanticHint: 'ব্যাটারির অবস্থা।',
                             onPressed: () {
-                              _voiceService.speak(
-                                'ব্যাটারি ৮৫ শতাংশ। Battery is 85 percent.',
-                              );
+                              _voiceService.speak('ব্যাটারি ৮৫ শতাংশ।');
                             },
                             color: AppColors.warning,
                           ),
                           AccessibleActionButton(
                             icon: Icons.visibility,
                             label: 'ভিশন',
-                            labelEn: 'Vision',
-                            semanticHint:
-                                'লাইভ ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ ডেমো।',
+                            labelEn: 'ভিশন',
+                            semanticHint: 'লাইভ ক্যামেরা অবজেক্ট সনাক্তকরণ ডেমো।',
                             onPressed: () => Navigator.pushNamed(
                               context,
                               AppRoutes.visionDemo,
@@ -1135,7 +1091,7 @@ class _HomeScreenState extends State<HomeScreen>
                             AccessibleActionButton(
                               icon: Icons.video_camera_back,
                               label: 'কেন ক্যাম',
-                              labelEn: 'Cane Cam',
+                              labelEn: 'কেন ক্যাম',
                               semanticHint:
                                   'লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ।',
                               onPressed: () => Navigator.pushNamed(
