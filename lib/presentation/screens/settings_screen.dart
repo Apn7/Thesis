@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../services/settings_service.dart';
@@ -128,6 +129,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
 
             SizedBox(height: AppConstants.spacingXl),
+
+            // ── Safety / Emergency Section ────────────────────────────
+            if (AppConstants.enableSos) ...[
+              _buildSectionHeader(context, 'নিরাপত্তা'),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.sos, color: AppColors.error),
+                  title: const Text('জরুরি যোগাযোগ'),
+                  subtitle: Text(
+                    'বিপদে যাদের অবস্থানসহ বার্তা পাঠানো হবে',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                  onTap: () => Navigator.pushNamed(context, AppRoutes.sos),
+                ),
+              ),
+              SizedBox(height: AppConstants.spacingXl),
+            ],
 
             // ── About Section ─────────────────────────────────────────
             _buildSectionHeader(context, 'সম্পর্কে'),

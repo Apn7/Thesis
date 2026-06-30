@@ -9,7 +9,8 @@ class VisionStrings {
 
   // Loading / model state
   static const String loadingModel = 'মডেল লোড হচ্ছে...';
-  static const String modelMissing = 'মডেল ফাইল পাওয়া যায়নি। ডকুমেন্টেশন দেখুন।';
+  static const String modelMissing =
+      'মডেল ফাইল পাওয়া যায়নি। ডকুমেন্টেশন দেখুন।';
 
   // Toggles
   static const String modelLabel = 'মডেল';

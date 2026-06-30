@@ -5,8 +5,8 @@ import 'package:permission_handler/permission_handler.dart';
 
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
-// import '../../core/utils/constants.dart'; // only needed for enableLlm flag — disabled
 // import '../../services/llm_service.dart'; // on-device LLM — disabled to reduce APK size
 import '../../services/settings_service.dart';
 import '../../services/speech_service.dart';
@@ -90,6 +90,9 @@ class _SplashScreenState extends State<SplashScreen>
       Permission.bluetoothConnect,
       Permission.locationWhenInUse,
       Permission.microphone,
+      // SMS up front so the emergency SOS never stops to ask for permission
+      // mid-crisis — the one moment a dialog is least acceptable.
+      if (AppConstants.enableSos) Permission.sms,
     ];
 
     // Only prompt for what's still missing so repeat launches stay silent —

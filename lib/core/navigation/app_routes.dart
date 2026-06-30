@@ -7,4 +7,5 @@ class AppRoutes {
   static const String help = '/help';
   static const String visionDemo = '/vision';
   static const String piVision = '/pi-vision';
+  static const String sos = '/sos';
 }

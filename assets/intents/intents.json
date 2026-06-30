@@ -198,6 +198,66 @@
         "poribesh borno koro"
       ],
       "response": "সামনে দেখছি"
+    },
+    {
+      "action": "trigger_sos",
+      "phrases": [
+        "জরুরি",
+        "জরুরি সাহায্য",
+        "জরুরি অবস্থা",
+        "বিপদ",
+        "বিপদে পড়েছি",
+        "আমি বিপদে",
+        "বাঁচাও",
+        "আমাকে বাঁচাও",
+        "এসওএস",
+        "জরুরি বার্তা পাঠাও",
+        "সাহায্য পাঠাও",
+        "আমাকে সাহায্য করো",
+        "emergency",
+        "sos",
+        "help me now",
+        "i am in danger",
+        "danger",
+        "send help",
+        "send sos",
+        "emergency help",
+        "jururi",
+        "joruri",
+        "joruri shahajjo",
+        "bipod",
+        "bipode porechi",
+        "amake bachao",
+        "bachao",
+        "sahajjo pathao"
+      ],
+      "response": "জরুরি সাহায্য পাঠানো হচ্ছে"
+    },
+    {
+      "action": "navigate_emergency_contacts",
+      "phrases": [
+        "জরুরি যোগাযোগ",
+        "জরুরি যোগাযোগ ব্যবস্থাপনা",
+        "জরুরি যোগাযোগ যোগ করো",
+        "যোগাযোগ যোগ করো",
+        "যোগাযোগ ব্যবস্থাপনা",
+        "যোগাযোগ তালিকা",
+        "কন্টাক্ট",
+        "কন্টাক্ট যোগ করো",
+        "ইমার্জেন্সি কন্টাক্ট",
+        "নম্বর যোগ করো",
+        "emergency contacts",
+        "manage contacts",
+        "add contact",
+        "add emergency contact",
+        "contact list",
+        "my contacts",
+        "joruri jogajog",
+        "contact jog koro",
+        "jogajog babosthapona",
+        "number jog koro"
+      ],
+      "response": "জরুরি যোগাযোগ পেইজ খুলছি"
     }
   ]
 }

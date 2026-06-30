@@ -23,6 +23,12 @@ enum VoiceAction {
   /// "What's in front of me?" — answered locally from the fusion window
   /// rather than by navigating anywhere.
   describeScene,
+
+  /// Emergency: open the SOS screen and auto-start the alert countdown.
+  triggerSos,
+
+  /// Open the emergency-contacts management page.
+  navigateEmergencyContacts,
   none,
 }
 
@@ -346,7 +352,9 @@ class VoiceNavigationService extends ChangeNotifier {
       _logBlockClose();
       if (turn == _turn) {
         _error = 'Processing error: $e';
-        await VoiceAnnouncer.announce('দুঃখিত, একটি সমস্যা হয়েছে। $_commandHint');
+        await VoiceAnnouncer.announce(
+          'দুঃখিত, একটি সমস্যা হয়েছে। $_commandHint',
+        );
       }
     } finally {
       watchdog.cancel();
@@ -506,6 +514,10 @@ class VoiceNavigationService extends ChangeNotifier {
         return VoiceAction.speakTime;
       case 'describe_scene':
         return VoiceAction.describeScene;
+      case 'trigger_sos':
+        return VoiceAction.triggerSos;
+      case 'navigate_emergency_contacts':
+        return VoiceAction.navigateEmergencyContacts;
       default:
         return VoiceAction.none;
     }

@@ -10,6 +10,9 @@
     <!-- Microphone permission for speech recognition -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- Send emergency SOS text messages directly (zero-tap, hands-free) -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
     <!-- Camera permission for the Vision Demo screen (live YOLO inference) -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

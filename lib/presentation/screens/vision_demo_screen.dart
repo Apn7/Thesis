@@ -330,10 +330,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
                 VisionStrings.latencyLabel,
                 '${_latencyMs.toStringAsFixed(0)} ms',
               ),
-              _buildMetricChip(
-                VisionStrings.fpsLabel,
-                _fps.toStringAsFixed(1),
-              ),
+              _buildMetricChip(VisionStrings.fpsLabel, _fps.toStringAsFixed(1)),
             ],
           ),
         ],
@@ -406,8 +403,7 @@ class _VisionDemoScreenState extends State<VisionDemoScreen> {
               : ListView.separated(
                   itemCount: dets.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) =>
-                      DetectionListTile(detection: dets[i]),
+                  itemBuilder: (_, i) => DetectionListTile(detection: dets[i]),
                 ),
         ),
       ],

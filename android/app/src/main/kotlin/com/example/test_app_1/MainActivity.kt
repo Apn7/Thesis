@@ -1,7 +1,10 @@
 package com.example.test_app_1
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.os.Build
+import android.telephony.SmsManager
 import android.view.KeyEvent
 // LiteRT-LM (on-device Gemma LLM) is disabled: its AAR bundles libLiteRt.so,
 // which collides with the LiteRT runtime shipped by the ultralytics_yolo
@@ -26,6 +29,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         private const val CHANNEL = "com.example.test_app_1/llm"
         private const val KEYS_CHANNEL = "com.example.test_app_1/hardware_keys"
+        private const val SMS_CHANNEL = "com.example.test_app_1/sms"
     }
 
     // Channel used to forward consumed hardware-key events (volume up) to Dart.
@@ -62,7 +66,65 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // Emergency SOS: send an SMS directly via SmsManager (zero-tap,
+        // hands-free — the whole point for a blind user). The Dart side
+        // requests SEND_SMS at runtime before calling; we re-check here and
+        // fail cleanly if it was denied. Multipart-aware so the bilingual
+        // Bengali message + maps link (which spans several 70-char Unicode
+        // segments) is delivered as one logical message.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SMS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "sendSms" -> {
+                        val addresses = call.argument<List<String>>("addresses")
+                        val message = call.argument<String>("message")
+                        if (addresses.isNullOrEmpty() || message.isNullOrEmpty()) {
+                            result.error(
+                                "BAD_ARGS",
+                                "addresses and message are required",
+                                null,
+                            )
+                            return@setMethodCallHandler
+                        }
+                        if (checkSelfPermission(android.Manifest.permission.SEND_SMS)
+                            != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            result.error(
+                                "NO_PERMISSION",
+                                "SEND_SMS permission not granted",
+                                null,
+                            )
+                            return@setMethodCallHandler
+                        }
+                        try {
+                            val sms = smsManager()
+                            var sent = 0
+                            for (addr in addresses) {
+                                val parts = sms.divideMessage(message)
+                                sms.sendMultipartTextMessage(
+                                    addr, null, parts, null, null,
+                                )
+                                sent++
+                            }
+                            result.success(sent)
+                        } catch (e: Exception) {
+                            result.error("SEND_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
+
+    /** Obtain an SmsManager the API-correct way (getDefault is deprecated 31+). */
+    private fun smsManager(): SmsManager =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(SmsManager::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            SmsManager.getDefault()
+        }
 
     // ── hardware-key interception ─────────────────────────────────────────────
     //

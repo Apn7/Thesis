@@ -11,10 +11,7 @@ import '../../services/detection_models.dart';
 class DetectionListTile extends StatelessWidget {
   final Detection detection;
 
-  const DetectionListTile({
-    super.key,
-    required this.detection,
-  });
+  const DetectionListTile({super.key, required this.detection});
 
   @override
   Widget build(BuildContext context) {

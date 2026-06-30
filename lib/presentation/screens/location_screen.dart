@@ -369,7 +369,8 @@ class _LocationScreenState extends State<LocationScreen> {
                   ),
                 ),
                 child: Semantics(
-                  label: 'জিপিএস ইন্টারনেট ছাড়াই কাজ করে, ঠিকানার জন্য ইন্টারনেট লাগে।',
+                  label:
+                      'জিপিএস ইন্টারনেট ছাড়াই কাজ করে, ঠিকানার জন্য ইন্টারনেট লাগে।',
                   child: Row(
                     children: [
                       Icon(

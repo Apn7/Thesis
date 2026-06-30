@@ -386,6 +386,20 @@ class _HomeScreenState extends State<HomeScreen>
           // Handled in-place by VoiceNavigationService (speaks the fusion
           // scene description); nothing to route here.
           break;
+        case VoiceAction.triggerSos:
+          // Open the SOS screen and auto-start the countdown so a voice
+          // command ("জরুরি"/"বিপদ") fires the alert hands-free.
+          Navigator.pushNamed(
+            context,
+            AppRoutes.sos,
+            arguments: const {'autoStart': true},
+          );
+          break;
+        case VoiceAction.navigateEmergencyContacts:
+          // Same SOS page, but no autoStart — opens it for managing contacts
+          // without firing the alert countdown.
+          Navigator.pushNamed(context, AppRoutes.sos);
+          break;
         case VoiceAction.none:
           break;
       }
@@ -1013,6 +1027,52 @@ class _HomeScreenState extends State<HomeScreen>
                       // if (AppConstants.enablePiBle) _buildBleCard(),
                       SizedBox(height: AppConstants.spacingXl),
 
+                      // ── Emergency SOS (prominent, full-width) ─────────────────
+                      if (AppConstants.enableSos) ...[
+                        Semantics(
+                          button: true,
+                          label: 'জরুরি সাহায্য',
+                          hint: 'বিপদে জরুরি যোগাযোগে অবস্থানসহ বার্তা পাঠান।',
+                          child: Material(
+                            color: AppColors.error,
+                            borderRadius: BorderRadius.circular(
+                              AppConstants.radiusL,
+                            ),
+                            child: InkWell(
+                              onTap: () =>
+                                  Navigator.pushNamed(context, AppRoutes.sos),
+                              borderRadius: BorderRadius.circular(
+                                AppConstants.radiusL,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.all(AppConstants.spacingL),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(
+                                      Icons.sos,
+                                      color: Colors.white,
+                                      size: AppConstants.iconXl,
+                                    ),
+                                    SizedBox(width: AppConstants.spacingM),
+                                    const Text(
+                                      'জরুরি সাহায্য',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: AppConstants.spacingXl),
+                      ],
+
                       // ── Navigation grid ───────────────────────────────────────
                       Semantics(
                         header: true,
@@ -1080,7 +1140,8 @@ class _HomeScreenState extends State<HomeScreen>
                             icon: Icons.visibility,
                             label: 'ভিশন',
                             labelEn: 'ভিশন',
-                            semanticHint: 'লাইভ ক্যামেরা অবজেক্ট সনাক্তকরণ ডেমো।',
+                            semanticHint:
+                                'লাইভ ক্যামেরা অবজেক্ট সনাক্তকরণ ডেমো।',
                             onPressed: () => Navigator.pushNamed(
                               context,
                               AppRoutes.visionDemo,

@@ -168,4 +168,27 @@ class AppConstants {
       6000; // novelty fully recovers after this
   static const double fusionUtilityFloor =
       0.20; // stay silent below this utility
+
+  // ── Emergency SOS (direct SMS) ────────────────────────────────────────
+  // A zero-tap, hands-free panic alert: the app fetches GPS, builds a bilingual
+  // message + a Google Maps link, and sends it as a direct SMS (via a Kotlin
+  // SmsManager MethodChannel) to every saved emergency contact at once — no app
+  // to open and no send button to find, which is the whole point for a blind
+  // user. SMS is chosen over data channels because it reaches any handset and
+  // can be sent programmatically; the per-message SIM cost is negligible for a
+  // rarely-fired emergency. Android-only (no SMS on Windows desktop).
+  //
+  // Master switch — flip to false to detach the SOS feature entirely.
+  static const bool enableSos = true;
+
+  /// Eyes-free safety countdown before the SMS is sent, so an accidental
+  /// trigger can be cancelled. Spoken down by the SOS screen.
+  static const int sosCountdownSeconds = 5;
+
+  /// Upper bound on saved emergency contacts.
+  static const int sosMaxContacts = 5;
+
+  /// Default dialling code prepended to a locally-entered number that has no
+  /// country code. Bangladesh (880); stored without '+' or separators.
+  static const String sosDefaultCountryCode = '880';
 }

@@ -11,7 +11,8 @@ class AccessibilityLabels {
   static const String navigateToHelp = 'সাহায্য পান';
 
   // Location screen
-  static const String locationScreen = 'অবস্থান স্ক্রীন। আপনার বর্তমান অবস্থান।';
+  static const String locationScreen =
+      'অবস্থান স্ক্রীন। আপনার বর্তমান অবস্থান।';
   static const String refreshLocation = 'অবস্থান রিফ্রেশ করুন';
 
   // Settings screen
@@ -69,10 +70,6 @@ class AccessibilityHelper {
     required String label,
     bool assertive = false,
   }) {
-    return Semantics(
-      label: label,
-      liveRegion: true,
-      child: child,
-    );
+    return Semantics(label: label, liveRegion: true, child: child);
   }
 }

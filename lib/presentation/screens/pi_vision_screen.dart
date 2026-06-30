@@ -330,8 +330,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
               : ListView.separated(
                   itemCount: dets.length,
                   separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) =>
-                      DetectionListTile(detection: dets[i]),
+                  itemBuilder: (_, i) => DetectionListTile(detection: dets[i]),
                 ),
         ),
       ],

@@ -467,9 +467,7 @@ class SensorFusionService extends ChangeNotifier {
     final picks = _scheduler.select(fresh, now: now);
     if (picks.isNotEmpty) {
       _orderForUtterance(picks);
-      final utterance = picks
-          .map((t) => _phraseFor(t))
-          .join('. ');
+      final utterance = picks.map((t) => _phraseFor(t)).join('. ');
       _lastAnnouncement = utterance;
       _tts.speak(utterance);
     }
