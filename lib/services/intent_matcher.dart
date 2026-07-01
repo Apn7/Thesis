@@ -240,10 +240,24 @@ class _IntentDef {
 // ─────────────────────────────────────────────────────────────────────────────
 
 class IntentMatcher {
-  IntentMatcher._();
+  IntentMatcher._({String? assetPath})
+    : _assetPath = assetPath ?? _defaultAssetPath;
 
   static IntentMatcher? _instance;
+
+  /// The shared global matcher — phrase bank is app-wide navigation/utility
+  /// commands only. Screen-scoped control words (e.g. a voice dialog's
+  /// yes/no/cancel) must NOT live here: this instance is queried by
+  /// [VoiceNavigationService] on every transcript regardless of which screen
+  /// is open, so anything matched here can fire from anywhere in the app.
   static IntentMatcher get instance => _instance ??= IntentMatcher._();
+
+  /// A private matcher loaded from [assetPath], independent of [instance] and
+  /// its phrase bank / load state. Use this for a screen-local vocabulary
+  /// (e.g. [SosDialogController]'s "yes"/"no"/"cancel") that should only be
+  /// recognised while that screen owns the voice pipeline — never globally.
+  factory IntentMatcher.scoped(String assetPath) =>
+      IntentMatcher._(assetPath: assetPath);
 
   /// Default config — override via [setConfig] for ablations.
   IntentMatcherConfig _cfg = const IntentMatcherConfig();
@@ -263,7 +277,8 @@ class IntentMatcher {
     _cfg = cfg;
   }
 
-  static const String _assetPath = 'assets/intents/intents.json';
+  static const String _defaultAssetPath = 'assets/intents/intents.json';
+  final String _assetPath;
 
   // Stopwords ------------------------------------------------------------------
   // Pruning these *before* token-set similarity prevents fillers like "the",
@@ -822,8 +837,25 @@ class IntentMatcher {
   );
   static final RegExp _wsRe = RegExp(r'\s+');
 
+  /// Canonicalise Bengali nukta letters (ড়/ঢ়/য়). Sherpa-onnx STT and typed
+  /// dictionary text disagree on representation: STT tends to emit the
+  /// precomposed single codepoint (U+09DC/09DD/09DF), while phrases typed into
+  /// intents.json use the decomposed base-consonant + nukta (U+09BC) sequence.
+  /// They render identically but compare as different strings, so an exact
+  /// STT transcript of a listed phrase can silently miss the containment-boost
+  /// shortcut and fall below the confidence threshold on fuzzy scoring alone.
+  /// Collapsing both sides to the precomposed form before scoring fixes this
+  /// for every intent, not just one phrase.
+  static String _canonicalizeNukta(String s) {
+    return s
+        .replaceAll('ড়', 'ড়') // ড + ় → ড়
+        .replaceAll('ঢ়', 'ঢ়') // ঢ + ় → ঢ়
+        .replaceAll('য়', 'য়'); // য + ় → য়
+  }
+
   String _normalize(String s) {
     var t = s.toLowerCase().trim();
+    t = _canonicalizeNukta(t);
     t = t.replaceAll(_puncRe, ' ');
     t = t.replaceAll(_wsRe, ' ').trim();
     return t;

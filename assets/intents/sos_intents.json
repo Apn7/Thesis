@@ -1,0 +1,111 @@
+{
+  "_comment": "SOS-screen-only intent definitions for the emergency contact voice dialog (SosDialogController). Loaded into a private IntentMatcher.scoped() instance — NEVER merged into the global intents.json phrase bank, because control words like \"yes\"/\"no\"/\"cancel\" would otherwise fire from anywhere in the app and swallow unrelated commands.",
+  "intents": [
+    {
+      "action": "add_contact",
+      "phrases": [
+        "যোগাযোগ যোগ করো",
+        "নতুন যোগাযোগ",
+        "নতুন যোগাযোগ যোগ করো",
+        "কন্টাক্ট যোগ করো",
+        "নতুন কন্টাক্ট",
+        "নম্বর যোগ করো",
+        "নতুন নম্বর যোগ করো",
+        "একজন যোগ করো",
+        "যোগ করো",
+        "add contact",
+        "new contact",
+        "add a contact",
+        "add emergency contact",
+        "add number",
+        "notun jogajog",
+        "contact jog koro",
+        "number jog koro"
+      ],
+      "response": "নতুন যোগাযোগ যোগ করছি"
+    },
+    {
+      "action": "read_contacts",
+      "phrases": [
+        "যোগাযোগ পড়ো",
+        "যোগাযোগ শোনাও",
+        "যোগাযোগ গুলো বলো",
+        "কোন কোন যোগাযোগ আছে",
+        "কারা আছে",
+        "কে কে আছে",
+        "তালিকা পড়ো",
+        "তালিকা শোনাও",
+        "read contacts",
+        "list contacts",
+        "read my contacts",
+        "who are my contacts",
+        "jogajog poro",
+        "jogajog shonao",
+        "talika poro"
+      ],
+      "response": "যোগাযোগ পড়ছি"
+    },
+    {
+      "action": "confirm_yes",
+      "phrases": [
+        "হ্যাঁ",
+        "হ্যা",
+        "হা",
+        "জি",
+        "জ্বি",
+        "ঠিক আছে",
+        "ঠিক",
+        "সঠিক",
+        "সংরক্ষণ করো",
+        "সেভ করো",
+        "yes",
+        "yeah",
+        "ok",
+        "okay",
+        "correct",
+        "save",
+        "ha",
+        "thik ache",
+        "save koro"
+      ],
+      "response": "ঠিক আছে"
+    },
+    {
+      "action": "confirm_no",
+      "phrases": [
+        "না",
+        "নাহ",
+        "ভুল",
+        "ভুল হয়েছে",
+        "আবার",
+        "আবার বলবো",
+        "no",
+        "nope",
+        "wrong",
+        "incorrect",
+        "na",
+        "vul",
+        "abar"
+      ],
+      "response": "ঠিক আছে, আবার বলুন"
+    },
+    {
+      "action": "cancel",
+      "phrases": [
+        "বাতিল",
+        "বাতিল করো",
+        "ক্যান্সেল",
+        "বাদ দাও",
+        "থাক",
+        "থামো",
+        "cancel",
+        "stop",
+        "never mind",
+        "batil",
+        "batil koro",
+        "thak"
+      ],
+      "response": "বাতিল করা হয়েছে"
+    }
+  ]
+}

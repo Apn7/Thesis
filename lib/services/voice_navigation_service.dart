@@ -83,6 +83,12 @@ class VoiceNavigationService extends ChangeNotifier {
   // Navigation callback
   Function(VoiceAction action)? onNavigationAction;
 
+  /// Optional screen-scoped handler that gets first crack at a final
+  /// transcript (set by the SOS screen for its contact dialog). Returns true
+  /// if it consumed the utterance; false to fall through to the normal
+  /// intent-matcher / LLM pipeline so global commands still work.
+  Future<bool> Function(String transcript)? transcriptInterceptor;
+
   // Singleton
   static VoiceNavigationService get instance {
     _instance ??= VoiceNavigationService._();
@@ -221,6 +227,28 @@ class VoiceNavigationService extends ChangeNotifier {
       debugPrint('[STT] final transcript empty — prompting retry');
       if (turn == _turn) _setState(VoiceState.idle);
       VoiceAnnouncer.announce('শুনতে পাইনি, আবার বলুন।');
+      return;
+    }
+
+    // A screen-scoped interceptor (e.g. the SOS contact dialog) gets first
+    // crack. If it consumes the utterance, the normal intent/LLM pipeline is
+    // skipped; otherwise we fall through so global commands still work.
+    final interceptor = transcriptInterceptor;
+    if (interceptor != null) {
+      _setState(VoiceState.thinking);
+      interceptor(trimmed)
+          .then((handled) {
+            if (turn != _turn) return;
+            if (handled) {
+              _setState(VoiceState.idle);
+            } else {
+              _processCommand(trimmed, turn);
+            }
+          })
+          .catchError((Object e) {
+            debugPrint('[VOICE] interceptor error: $e');
+            if (turn == _turn) _processCommand(trimmed, turn);
+          });
       return;
     }
 

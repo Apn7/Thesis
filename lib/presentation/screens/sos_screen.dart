@@ -7,7 +7,9 @@ import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
 import '../../models/emergency_contact.dart';
 import '../../services/settings_service.dart';
+import '../../services/sos_dialog_controller.dart';
 import '../../services/sos_service.dart';
+import '../../services/voice_navigation_service.dart';
 
 /// Phase of the SOS flow. Models the whole screen as one explicit state machine
 /// so a voice-only user is never stranded mid-alert.
@@ -31,6 +33,8 @@ class SosScreen extends StatefulWidget {
 class _SosScreenState extends State<SosScreen> {
   final SettingsService _settings = SettingsService.instance;
   final SosService _sos = SosService.instance;
+  final VoiceNavigationService _voice = VoiceNavigationService.instance;
+  final SosDialogController _dialog = SosDialogController();
 
   _SosPhase _phase = _SosPhase.idle;
   int _countdown = AppConstants.sosCountdownSeconds;
@@ -45,6 +49,11 @@ class _SosScreenState extends State<SosScreen> {
   void initState() {
     super.initState();
     _settings.addListener(_onSettingsChanged);
+    _dialog.addListener(_onSettingsChanged);
+    // Take over the voice pipeline while this screen is mounted: the contact
+    // dialog gets first crack at every transcript; anything it doesn't own
+    // falls through to the normal global command handling.
+    _voice.transcriptInterceptor = _dialog.handleTranscript;
     // If we arrived from a voice command, begin immediately (next frame so the
     // route arguments and the first build are ready).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -61,6 +70,13 @@ class _SosScreenState extends State<SosScreen> {
   void dispose() {
     _countdownTimer?.cancel();
     _settings.removeListener(_onSettingsChanged);
+    _dialog.removeListener(_onSettingsChanged);
+    // Only relinquish the pipeline if it's still ours (defensive against
+    // overlapping screens stomping each other's handler).
+    if (_voice.transcriptInterceptor == _dialog.handleTranscript) {
+      _voice.transcriptInterceptor = null;
+    }
+    _dialog.dispose();
     super.dispose();
   }
 
@@ -229,6 +245,10 @@ class _SosScreenState extends State<SosScreen> {
           padding: EdgeInsets.all(AppConstants.spacingL),
           children: [
             _buildActionArea(),
+            if (_dialog.isActive) ...[
+              SizedBox(height: AppConstants.spacingL),
+              _buildDialogStatus(),
+            ],
             SizedBox(height: AppConstants.spacingXl),
             _buildContactsSection(),
           ],
@@ -432,6 +452,61 @@ class _SosScreenState extends State<SosScreen> {
     );
   }
 
+  /// Visual mirror of the in-progress voice dialog (the prompts are spoken;
+  /// this card helps a sighted helper follow along, and is a live region so
+  /// TalkBack re-announces stage changes).
+  Widget _buildDialogStatus() {
+    final (label, detail) = switch (_dialog.stage) {
+      ContactDialogStage.askName => ('নাম বলুন', _dialog.pendingName),
+      ContactDialogStage.askNumber => (
+        'নম্বর বলুন',
+        _dialog.pendingName.isEmpty ? '' : 'নাম: ${_dialog.pendingName}',
+      ),
+      ContactDialogStage.confirm => (
+        'সংরক্ষণ করবেন? "হ্যাঁ" বা "না" বলুন',
+        '${_dialog.pendingName} — +${_dialog.pendingDigits}',
+      ),
+      ContactDialogStage.idle => ('', ''),
+    };
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.all(AppConstants.spacingL),
+        decoration: BoxDecoration(
+          color: AppColors.info.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(AppConstants.radiusL),
+          border: Border.all(color: AppColors.info, width: 1.5),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.mic, color: AppColors.info),
+                SizedBox(width: AppConstants.spacingS),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.info,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (detail.isNotEmpty) ...[
+              SizedBox(height: AppConstants.spacingS),
+              Text(detail, style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildContactsSection() {
     final atCapacity = _contacts.length >= AppConstants.sosMaxContacts;
     return Column(
@@ -445,6 +520,13 @@ class _SosScreenState extends State<SosScreen> {
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
           ),
+        ),
+        SizedBox(height: AppConstants.spacingXs),
+        Text(
+          'ভয়েসে বলতে পারেন: "যোগাযোগ যোগ করো" অথবা "যোগাযোগ পড়ো"।',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
         ),
         SizedBox(height: AppConstants.spacingS),
         if (_contacts.isEmpty)

@@ -238,24 +238,15 @@
       "phrases": [
         "জরুরি যোগাযোগ",
         "জরুরি যোগাযোগ ব্যবস্থাপনা",
-        "জরুরি যোগাযোগ যোগ করো",
-        "যোগাযোগ যোগ করো",
         "যোগাযোগ ব্যবস্থাপনা",
-        "যোগাযোগ তালিকা",
-        "কন্টাক্ট",
-        "কন্টাক্ট যোগ করো",
+        "যোগাযোগ পেইজ",
+        "কন্টাক্ট পেইজ",
         "ইমার্জেন্সি কন্টাক্ট",
-        "নম্বর যোগ করো",
         "emergency contacts",
         "manage contacts",
-        "add contact",
-        "add emergency contact",
-        "contact list",
-        "my contacts",
+        "contacts page",
         "joruri jogajog",
-        "contact jog koro",
-        "jogajog babosthapona",
-        "number jog koro"
+        "jogajog babosthapona"
       ],
       "response": "জরুরি যোগাযোগ পেইজ খুলছি"
     }

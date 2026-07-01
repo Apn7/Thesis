@@ -105,6 +105,7 @@ flutter:
   assets:
     - .env
     - assets/intents/intents.json
+    - assets/intents/sos_intents.json
     - assets/alerts/
     - assets/models/coco_labels.txt
     - assets/models/yolo11n_float16.tflite
