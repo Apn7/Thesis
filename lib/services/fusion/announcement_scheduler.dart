@@ -38,7 +38,20 @@ class AnnouncementScheduler {
 
   /// The tracks to speak this cycle (caller orders the utterance), or `[]` to
   /// stay silent. [tracks] should be the fresh confirmed tracks.
-  List<Track> select(List<Track> tracks, {required DateTime now}) {
+  ///
+  /// [ttsBusy] — pass true while the shared TTS channel is already speaking
+  /// (a distance-alert escalation, a previous fusion utterance still playing).
+  /// `TtsService.speak()` *interrupts* whatever is in flight, so an ordinary
+  /// scene callout must **defer** rather than cut off a safety utterance
+  /// mid-word. Deferring here (before any state is committed) costs nothing:
+  /// novelty is not burned, so the callout simply retries next cycle. Only a
+  /// close Tier-1 hazard (the preempt condition) is allowed to interrupt —
+  /// safety beats sentence completeness.
+  List<Track> select(
+    List<Track> tracks, {
+    required DateTime now,
+    bool ttsBusy = false,
+  }) {
     lastUtilities.clear();
     lastPicks = const [];
     final scored = <(Track, double)>[];
@@ -54,6 +67,7 @@ class AnnouncementScheduler {
     // A close, high-utility Tier-1 hazard may jump the cadence queue (down to a
     // short hard floor) instead of waiting out the normal gap.
     final preempting = top.$1.tier == 1 && top.$2 >= 0.8;
+    if (ttsBusy && !preempting) return const []; // defer, don't interrupt
     final sinceMs = now.difference(_bucketRefill).inMilliseconds;
     final allowed =
         sinceMs >= AppConstants.fusionMinGapMs ||

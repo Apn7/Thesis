@@ -68,8 +68,7 @@ class SpokenNumberParser {
   // but the dictionary keys use the two-codepoint form U+09AF + U+09BC. Visually
   // identical, but string equality fails — causing ছয় (6) and নয় (9) to be
   // silently dropped. Normalise before every lookup.
-  static String _normalizeToken(String token) =>
-      token.replaceAll('য়', 'য়');
+  static String _normalizeToken(String token) => token.replaceAll('য়', 'য়');
 
   /// Extract an ASCII digit string from a Bengali spoken-number [text].
   /// Returns digits in spoken order; non-digit words are ignored. Empty string

@@ -109,6 +109,19 @@ class AppConstants {
   /// the connection and let the Pi redial rather than buffer unboundedly.
   static const int piDistanceMaxLineBytes = 64;
 
+  /// The sonar streams at ~5 Hz; if no reading arrives within this window the
+  /// stream is stalled (WiFi hiccup, Pi hang, half-open TCP) and the last
+  /// reading is a lie. The service then reverts to `noData` so the user is
+  /// never alarmed — or falsely reassured — by a frozen distance.
+  static const int sonarStaleMs = 2500;
+
+  /// De-escalation hysteresis for the distance verdict. A reading hovering on
+  /// a threshold (cane swinging at ~50 cm) would otherwise flap
+  /// CRITICAL↔WARNING every reading, restarting the alarm tone and vibration
+  /// burst each time. Escalation is instant (safety); de-escalation must clear
+  /// the boundary by this margin.
+  static const double verdictHysteresisCm = 10.0;
+
   // ── Sensor Fusion (camera detections + sonar distance) ────────────────
   // Combines the Pi camera's YOLO detections with the HC-SR04 sonar distance
   // into meaningful, non-overwhelming spoken alerts for the blind user. Runs
@@ -168,6 +181,12 @@ class AppConstants {
       6000; // novelty fully recovers after this
   static const double fusionUtilityFloor =
       0.20; // stay silent below this utility
+
+  /// "What's in front of me?" freshness bound. If fusion hasn't successfully
+  /// processed a frame within this window (Pi camera down, stream stalled),
+  /// the answer would come from stale frames — say the camera is unavailable
+  /// instead of describing a scene that may no longer exist.
+  static const int fusionSceneStaleMs = 3000;
 
   // ── Emergency SOS (direct SMS) ────────────────────────────────────────
   // A zero-tap, hands-free panic alert: the app fetches GPS, builds a bilingual

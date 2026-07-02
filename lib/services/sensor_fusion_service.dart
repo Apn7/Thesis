@@ -73,6 +73,26 @@ class SensorFusionService extends ChangeNotifier {
   final ExistenceGrid _grid = ExistenceGrid();
   final AnnouncementScheduler _scheduler = AnnouncementScheduler();
 
+  // ── Audio-channel arbitration ───────────────────────────────────────────
+  // Fusion shares one TTS channel with the voice agent, the distance alarm
+  // and the SOS flow — and TtsService.speak() *interrupts* whatever is in
+  // flight. Perception always keeps running; only the announcements yield.
+
+  /// Held while the voice pipeline owns a turn (user dictating over PTT, the
+  /// LLM thinking, the reply being spoken). Set by `VoiceNavigationService`.
+  /// Talking over the user corrupts STT capture; cutting off the assistant's
+  /// reply loses the answer — and the sonar CRITICAL alarm remains the safety
+  /// net either way, so fusion can afford to stay quiet here.
+  bool voicePipelineBusy = false;
+
+  /// Held while a screen that owns the audio channel is mounted (the SOS
+  /// screen: countdown + contact dialog must never be interleaved with
+  /// obstacle chatter). Set/cleared by that screen, like the transcript
+  /// interceptor pattern.
+  bool uiAudioHold = false;
+
+  bool get _announcementsHeld => voicePipelineBusy || uiAudioHold;
+
   // ── Last-announced state per zone (for state-change detection) ─────────
   String? _lastCenter;
   String? _lastLeft;
@@ -148,8 +168,10 @@ class SensorFusionService extends ChangeNotifier {
   String get lastAnnouncement => _lastAnnouncement;
 
   /// Live sonar distance (cm) and its verdict, read from [PiDistanceService].
+  /// The verdict is the source's own (hysteretic) verdict so fusion, the alert
+  /// flow and the UI can never disagree about the current danger level.
   double? get latestDistanceCm => _distance.latestDistance;
-  ObstacleVerdict get verdict => verdictForDistanceCm(_distance.latestDistance);
+  ObstacleVerdict get verdict => _distance.verdict;
 
   /// Inference timing for the debug panel.
   double get latencyMs => _latencyMs;
@@ -195,6 +217,7 @@ class SensorFusionService extends ChangeNotifier {
 
     _frames.addListener(_onFrameUpdate);
     await _frames.start(); // reference-counted; shared with PiVisionScreen
+    _lastServerState = _frames.state; // baseline; announce transitions only
     unawaited(_maybeProcess()); // a frame may already be waiting
   }
 
@@ -210,6 +233,7 @@ class SensorFusionService extends ChangeNotifier {
     _modelReady = false;
     _busy = false;
     _lastProcessedId = -1;
+    _lastServerState = null;
     _window.clear();
     _grid.reset();
     _scheduler.reset();
@@ -236,7 +260,30 @@ class SensorFusionService extends ChangeNotifier {
 
   // ── Frame pipeline ────────────────────────────────────────────────────
 
-  void _onFrameUpdate() => unawaited(_maybeProcess());
+  /// Frame-server state at the last listener callback, for edge detection.
+  PiServerState? _lastServerState;
+
+  void _onFrameUpdate() {
+    _announceCameraTransitions();
+    unawaited(_maybeProcess());
+  }
+
+  /// Speak camera link up/down transitions, mirroring the sonar's
+  /// "লাঠির সেন্সর সংযুক্ত হয়েছে" announcements. Without this the vision layer
+  /// fails silently — a blind user cannot tell "no obstacles around me" from
+  /// "the camera died", and those must never sound the same.
+  void _announceCameraTransitions() {
+    final s = _frames.state;
+    final prev = _lastServerState;
+    if (prev == null || s == prev) return;
+    _lastServerState = s;
+    if (_announcementsHeld) return; // rare status note; never talk over a turn
+    if (s == PiServerState.streaming) {
+      _tts.speak('ক্যানের ক্যামেরা সংযুক্ত হয়েছে।');
+    } else if (prev == PiServerState.streaming) {
+      _tts.speak('ক্যানের ক্যামেরা বিচ্ছিন্ন হয়েছে।');
+    }
+  }
 
   Future<void> _maybeProcess() async {
     if (!_running || _busy || !_modelReady || _yolo == null) return;
@@ -343,7 +390,7 @@ class SensorFusionService extends ChangeNotifier {
     final current = _window.last;
 
     final distCm = _distance.latestDistance;
-    final verdict = verdictForDistanceCm(distCm);
+    final verdict = _distance.verdict;
 
     // PRIORITY LAYER: at CRITICAL range the HomeScreen proximity alarm owns
     // the audio channel. Stay silent (and forget our announce state so the
@@ -356,8 +403,10 @@ class SensorFusionService extends ChangeNotifier {
       return;
     }
 
+    // Strict `<`: the Pi clamps out-of-range ("path clear") readings to
+    // exactly the max, so max is a non-reading, not a measurement.
     final inRange =
-        distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
+        distCm != null && distCm < AppConstants.fusionSonarMaxAssignCm;
 
     // ── Center: largest confirmed bbox gets the sonar distance ──────────
     // The largest box in the center zone is (by apparent size) the closest
@@ -386,6 +435,14 @@ class SensorFusionService extends ChangeNotifier {
     _confirmedCenter = centerLabel;
     _confirmedLeft = leftLabel;
     _confirmedRight = rightLabel;
+
+    // While a voice turn or the SOS screen owns the audio channel, keep
+    // perceiving but say nothing — and don't consume the change/cooldown
+    // state, so the scene announces once the channel frees up.
+    if (_announcementsHeld) {
+      notifyListeners();
+      return;
+    }
 
     // Build one combined utterance from the zones that CHANGED (TtsService
     // interrupts on every speak(), so three separate calls would cut each
@@ -432,9 +489,12 @@ class SensorFusionService extends ChangeNotifier {
     final confirmed = _grid.update(detections); // all currently-confirmed cells
 
     final distCm = _distance.latestDistance;
-    final verdict = verdictForDistanceCm(distCm);
+    final verdict = _distance.verdict;
+    // Strict `<`: the Pi clamps out-of-range ("path clear") readings to
+    // exactly the max, so max is a non-reading, not a measurement — treating
+    // it as one would put a phantom "obstacle at 4 m" in every clear scene.
     final inRange =
-        distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
+        distCm != null && distCm < AppConstants.fusionSonarMaxAssignCm;
 
     // Fresh = confirmed AND detected this frame (have a current box). Only these
     // are announce/distance candidates; lingering cells just keep the picture
@@ -445,10 +505,14 @@ class SensorFusionService extends ChangeNotifier {
     // hazard, and score proximity for every fresh track.
     _assignDistanceAndProximity(fresh, distCm, inRange);
 
-    // Sonar-only fallback: nothing recognised dead ahead but the sonar sees
-    // something (glass, a thin pole) — worth a heads-up.
-    final hasCenter = fresh.any((t) => t.zone == PositionZone.center);
-    if (!hasCenter && inRange) {
+    // Sonar-only fallback: nothing recognised dead ahead (fresh OR lingering —
+    // a briefly-missed pole must not degrade into a vaguer "obstacle") but the
+    // sonar sees something (glass, a thin pole) — worth a heads-up. Fires only
+    // while the distance alarm is silent (SAFE band, 2–4 m): closer in, the
+    // alarm is already vibrating + has spoken the range, and an identity-free
+    // "obstacle" would just repeat it.
+    final hasCenter = confirmed.any((t) => t.zone == PositionZone.center);
+    if (!hasCenter && inRange && verdict == ObstacleVerdict.safe) {
       fresh.add(_obstacleTrack(distCm));
     }
 
@@ -463,8 +527,18 @@ class SensorFusionService extends ChangeNotifier {
       return;
     }
 
-    // Layer 2: at most one short utterance (≤2 zones), center-first.
-    final picks = _scheduler.select(fresh, now: now);
+    // While a voice turn or the SOS screen owns the audio channel, keep
+    // perceiving but don't run the scheduler — no state is consumed, so the
+    // scene announces as soon as the channel frees up.
+    if (_announcementsHeld) {
+      notifyListeners();
+      return;
+    }
+
+    // Layer 2: at most one short utterance (≤2 zones), center-first. Defer
+    // (without burning novelty) while the TTS channel is mid-utterance —
+    // only a close Tier-1 hazard may interrupt.
+    final picks = _scheduler.select(fresh, now: now, ttsBusy: _tts.isSpeaking);
     if (picks.isNotEmpty) {
       _orderForUtterance(picks);
       final utterance = picks.map((t) => _phraseFor(t)).join('. ');
@@ -610,6 +684,16 @@ class SensorFusionService extends ChangeNotifier {
   /// Answers "what's in front of me?" from the current window: the top-N most
   /// consistently-seen objects, plus the nearest sonar distance if in range.
   String getSceneDescription() {
+    // Freshness first: if the camera stream is down or stalled, the window
+    // holds a scene that may no longer exist — say so instead of describing
+    // it. A blind user must be able to trust that an answer is *current*.
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+    final stale =
+        _lastDoneAtMs == 0 ||
+        nowMs - _lastDoneAtMs > AppConstants.fusionSceneStaleMs;
+    if (!_running || stale) {
+      return 'ক্যামেরা থেকে ছবি পাওয়া যাচ্ছে না।';
+    }
     if (_window.length < AppConstants.fusionWindowSize) {
       return 'এখনও যথেষ্ট তথ্য নেই।';
     }
@@ -623,11 +707,11 @@ class SensorFusionService extends ChangeNotifier {
 
     final distCm = _distance.latestDistance;
     final inRange =
-        distCm != null && distCm <= AppConstants.fusionSonarMaxAssignCm;
+        distCm != null && distCm < AppConstants.fusionSonarMaxAssignCm;
 
     if (totals.isEmpty) {
       if (inRange) {
-        return 'সামনে কিছু চিনতে পারিনি, তবে ${_metersStr(distCm)} মিটার দূরে একটি বাধা আছে।';
+        return 'সামনে কিছু চিনতে পারিনি, তবে ${spokenDistance(distCm)} দূরে একটি বাধা আছে।';
       }
       return 'সামনে কিছু সনাক্ত হয়নি।';
     }
@@ -643,7 +727,7 @@ class SensorFusionService extends ChangeNotifier {
     final buf = StringBuffer();
     buf.write('সামনে $list আছে।');
     if (inRange) {
-      buf.write(' নিকটতম বাধা ${_metersStr(distCm)} মিটার দূরে।');
+      buf.write(' নিকটতম বাধা ${spokenDistance(distCm)} দূরে।');
     }
     return buf.toString();
   }
@@ -732,20 +816,43 @@ class SensorFusionService extends ChangeNotifier {
     if (approaching) {
       // Looming cue (Layer 3): the bbox is growing ⇒ the hazard is closing in.
       if (distCm == null) return '$name এগিয়ে আসছে';
-      return '$name এগিয়ে আসছে, ${_metersStr(distCm)} মিটার';
+      return '$name এগিয়ে আসছে, ${spokenDistance(distCm)}';
     }
     if (distCm == null) return 'সামনে $name';
-    return '$name, ${_metersStr(distCm)} মিটার';
+    return '$name, ${spokenDistance(distCm)}';
   }
 
   String _obstaclePhrase(double distCm) =>
-      'সামনে বাধা, ${_metersStr(distCm)} মিটার';
+      'সামনে বাধা, ${spokenDistance(distCm)}';
 
   String _sidePhrase(String label, PositionZone zone) =>
       '${zone.bn} দিকে ${_labelFor(label)}';
 
-  /// Distance in metres, one decimal place, in Bengali numerals.
-  String _metersStr(double cm) => _toBnDigits((cm / 100.0).toStringAsFixed(1));
+  /// Coarse spoken distance, unit included.
+  ///
+  /// Decimal metres ("১.৪ মিটার") are false precision from a wide-cone sonar,
+  /// slower to parse while walking, and risk the TTS mangling the ASCII "."
+  /// between Bengali digits. Established audio-navigation UX (Soundscape et
+  /// al.) speaks coarse distances, so:
+  ///  * `< 1 m` — centimetres rounded to 10 ("৯০ সেন্টিমিটার"), matching the
+  ///    distance-alarm escalation speech so the user hears ONE unit system
+  ///    at close range;
+  ///  * `≥ 1 m` — half-metre steps with idiomatic Bengali ("দেড় মিটার",
+  ///    "আড়াই মিটার", "সাড়ে ৩ মিটার").
+  @visibleForTesting
+  static String spokenDistance(double cm) {
+    if (cm < 100) {
+      final rounded = ((cm / 10).round() * 10).clamp(10, 90);
+      return '${_toBnDigits('$rounded')} সেন্টিমিটার';
+    }
+    final halves = (cm / 50).round(); // half-metre resolution
+    final whole = halves ~/ 2;
+    final isHalf = halves.isOdd;
+    if (!isHalf) return '${_toBnDigits('$whole')} মিটার';
+    if (whole == 1) return 'দেড় মিটার';
+    if (whole == 2) return 'আড়াই মিটার';
+    return 'সাড়ে ${_toBnDigits('$whole')} মিটার';
+  }
 
   static String _toBnDigits(String s) {
     const bn = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];

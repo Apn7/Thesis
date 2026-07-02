@@ -151,5 +151,34 @@ void main() {
       ], now: t0);
       expect(picks, isEmpty);
     });
+
+    test('ttsBusy defers an ordinary callout WITHOUT burning novelty', () {
+      final s = AnnouncementScheduler();
+      // The TTS channel is mid-utterance (e.g. the WARNING escalation speech):
+      // a moderate track must wait its turn, not cut the safety speech off.
+      final held = s.select(
+        [_trk('Tree', tier: 2, existence: 0.9, proximity: 0.6)],
+        now: t0,
+        ttsBusy: true,
+      );
+      expect(held, isEmpty);
+      // The moment the channel frees up, the SAME callout goes out — novelty
+      // was not consumed by the deferral.
+      final picks = s.select([
+        _trk('Tree', tier: 2, existence: 0.9, proximity: 0.6),
+      ], now: t0.add(const Duration(milliseconds: 200)));
+      expect(_has(picks, 'Tree'), isTrue);
+    });
+
+    test('a close Tier-1 hazard is still allowed to interrupt live TTS', () {
+      final s = AnnouncementScheduler();
+      // Safety beats sentence completeness: utility ≥ 0.8 Tier-1 preempts.
+      final picks = s.select(
+        [_trk('Pothole', tier: 1, existence: 1.0, proximity: 1.0)],
+        now: t0,
+        ttsBusy: true,
+      );
+      expect(_has(picks, 'Pothole'), isTrue);
+    });
   });
 }

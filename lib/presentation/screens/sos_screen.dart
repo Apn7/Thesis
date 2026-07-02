@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
 import '../../models/emergency_contact.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/sos_dialog_controller.dart';
 import '../../services/sos_service.dart';
@@ -54,6 +55,11 @@ class _SosScreenState extends State<SosScreen> {
     // dialog gets first crack at every transcript; anything it doesn't own
     // falls through to the normal global command handling.
     _voice.transcriptInterceptor = _dialog.handleTranscript;
+    // Own the audio channel too: the SOS countdown and the contact dialog
+    // must never be interleaved with fusion's obstacle callouts (TTS
+    // interrupts — a scene callout would swallow a countdown number). The
+    // sonar CRITICAL alarm is independent and still gets through.
+    SensorFusionService.instance.uiAudioHold = true;
     // If we arrived from a voice command, begin immediately (next frame so the
     // route arguments and the first build are ready).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -76,6 +82,7 @@ class _SosScreenState extends State<SosScreen> {
     if (_voice.transcriptInterceptor == _dialog.handleTranscript) {
       _voice.transcriptInterceptor = null;
     }
+    SensorFusionService.instance.uiAudioHold = false;
     _dialog.dispose();
     super.dispose();
   }

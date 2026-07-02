@@ -113,6 +113,13 @@ class VoiceNavigationService extends ChangeNotifier {
   void _setState(VoiceState s) {
     if (_state == s) return;
     _state = s;
+    // Audio-channel arbitration: while a turn is live (user dictating, LLM
+    // thinking, reply speaking) the fusion layer must not talk over it —
+    // fusion speech would corrupt STT capture or cut off the reply. The sonar
+    // CRITICAL alarm stays independent, so safety is not reduced.
+    if (AppConstants.enableSensorFusion) {
+      SensorFusionService.instance.voicePipelineBusy = s != VoiceState.idle;
+    }
     notifyListeners();
   }
 
@@ -411,7 +418,8 @@ class VoiceNavigationService extends ChangeNotifier {
     // We treat a response as "failed" only when it carries the specific error
     // strings emitted by GroqService.error() — meaning a network/API failure,
     // not a legitimate "none" action from the model.
-    final groqFailed = groqResponse.action == 'none' &&
+    final groqFailed =
+        groqResponse.action == 'none' &&
         (groqResponse.spokenResponse.contains('সংযোগ') ||
             groqResponse.spokenResponse.contains('error') ||
             groqResponse.spokenResponse.contains('Error'));
@@ -438,8 +446,7 @@ class VoiceNavigationService extends ChangeNotifier {
           .processCommand(text)
           .timeout(
             const Duration(seconds: 12),
-            onTimeout: () =>
-                VoiceCommandResponse.error('Gemini timeout'),
+            onTimeout: () => VoiceCommandResponse.error('Gemini timeout'),
           );
     } catch (e) {
       debugPrint('[GEMINI] !! exception: $e');

@@ -53,6 +53,13 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
   void Function(ObstacleVerdict verdict)? onVerdictChanged;
   ObstacleVerdict _lastNotifiedVerdict = ObstacleVerdict.noData;
 
+  /// Freshness watchdog. The sonar streams ~5 readings/s; if nothing arrives
+  /// for [AppConstants.sonarStaleMs] the stream is stalled (WiFi hiccup, Pi
+  /// hang, half-open TCP that never FINs) and the last reading is a lie —
+  /// either an endless phantom alarm or, worse, a frozen "safe" while the
+  /// user walks at a wall. Revert to `noData` until data flows again.
+  Timer? _staleTimer;
+
   @override
   SensorLinkState get state => _state;
   @override
@@ -66,8 +73,11 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
   String get lastRawValue => _lastRawValue;
   String? get connectedDeviceName => _client?.remoteAddress.address;
 
+  /// The *hysteretic* verdict (see [verdictForDistanceCmSticky]) — kept as the
+  /// single source of truth so the alert flow, the fusion layer, and the UI
+  /// card can never disagree about the current danger level.
   @override
-  ObstacleVerdict get verdict => verdictForDistanceCm(_latestDistance);
+  ObstacleVerdict get verdict => _lastNotifiedVerdict;
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
 
@@ -173,6 +183,8 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
   }
 
   void _dropClient({bool backToListening = true}) {
+    _staleTimer?.cancel();
+    _staleTimer = null;
     _clientSub?.cancel();
     _clientSub = null;
     final client = _client;
@@ -248,10 +260,41 @@ class PiDistanceService extends ChangeNotifier implements DistanceAlertSource {
     final parsed = double.tryParse(raw);
     _latestDistance = (parsed == null || parsed < 0) ? null : parsed;
 
-    final newVerdict = verdict;
+    // Fresh data arrived — push the staleness deadline out.
+    _armStaleWatchdog();
+
+    // Hysteresis: escalate instantly, de-escalate only once the reading has
+    // cleared the boundary by a margin — otherwise a cane swinging at ~50 cm
+    // restarts the alarm tone/vibration burst on every reading.
+    final newVerdict = verdictForDistanceCmSticky(
+      _latestDistance,
+      _lastNotifiedVerdict,
+    );
     if (newVerdict != _lastNotifiedVerdict) {
       _lastNotifiedVerdict = newVerdict;
       onVerdictChanged?.call(newVerdict);
+    }
+    notifyListeners();
+  }
+
+  void _armStaleWatchdog() {
+    _staleTimer?.cancel();
+    _staleTimer = Timer(
+      const Duration(milliseconds: AppConstants.sonarStaleMs),
+      _onStale,
+    );
+  }
+
+  void _onStale() {
+    if (_disposed) return;
+    debugPrint(
+      'PiDistanceService: no reading for ${AppConstants.sonarStaleMs} ms — '
+      'stream stalled, reverting to noData',
+    );
+    _latestDistance = null;
+    if (_lastNotifiedVerdict != ObstacleVerdict.noData) {
+      _lastNotifiedVerdict = ObstacleVerdict.noData;
+      onVerdictChanged?.call(ObstacleVerdict.noData);
     }
     notifyListeners();
   }

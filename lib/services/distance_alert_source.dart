@@ -74,6 +74,43 @@ ObstacleVerdict verdictForDistanceCm(double? distanceCm) {
   return ObstacleVerdict.safe;
 }
 
+/// [verdictForDistanceCm] with **de-escalation hysteresis**.
+///
+/// A cane swinging at a threshold boundary (e.g. ~50 cm) makes the raw verdict
+/// flap CRITICAL↔WARNING on nearly every reading — each flap restarts the
+/// alarm tone, the vibration burst, and (on the way back up) the escalation
+/// speech. Chattering alarms are the classic embedded-alert failure mode, so:
+///
+///  * **Escalation is instant** — severity going *up* always passes through
+///    unmodified (safety first, no added latency).
+///  * **De-escalation is sticky** — the reading must clear the previous
+///    verdict's boundary by [AppConstants.verdictHysteresisCm] before the
+///    verdict relaxes (e.g. leave CRITICAL only at ≥ 60 cm, not 50).
+///  * `noData` always passes through — a lost link must silence the alarm.
+ObstacleVerdict verdictForDistanceCmSticky(
+  double? distanceCm,
+  ObstacleVerdict previous,
+) {
+  final raw = verdictForDistanceCm(distanceCm);
+  if (raw == ObstacleVerdict.noData) return raw;
+  if (raw.severity >= previous.severity) return raw;
+
+  final double boundary;
+  switch (previous) {
+    case ObstacleVerdict.critical:
+      boundary = AppConstants.espCriticalCm;
+    case ObstacleVerdict.warning:
+      boundary = AppConstants.espWarningCm;
+    case ObstacleVerdict.caution:
+      boundary = AppConstants.espCautionCm;
+    case ObstacleVerdict.safe:
+    case ObstacleVerdict.noData:
+      return raw; // nothing below these to hold on to
+  }
+  final held = distanceCm! < boundary + AppConstants.verdictHysteresisCm;
+  return held ? previous : raw;
+}
+
 /// Connection lifecycle state of a distance source.
 ///
 /// Named for the original ESP32 BLE peripheral; the Pi-over-WiFi source reuses
