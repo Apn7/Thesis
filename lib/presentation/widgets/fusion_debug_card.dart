@@ -154,7 +154,7 @@ class FusionDebugCard extends StatelessWidget {
     final utility = fusion.utilityFor(t);
     final looming = t.areaTrend > 0.15;
     final live = t.seenThisFrame;
-    final name = t.label == '__obstacle__' ? 'বাধা (সোনার)' : t.label;
+    final name = t.label == '__obstacle__' ? 'বাধা (আল্ট্রাসনিক)' : t.label;
 
     // Sub-line: the scheduler inputs that decided whether this track spoke.
     final facts = <String>[
@@ -300,7 +300,7 @@ class FusionDebugCard extends StatelessWidget {
       children: [
         Icon(Icons.straighten, size: AppConstants.iconS, color: color),
         SizedBox(width: AppConstants.spacingS),
-        Text('সোনার: ', style: Theme.of(context).textTheme.bodyMedium),
+        Text('আল্ট্রাসনিক: ', style: Theme.of(context).textTheme.bodyMedium),
         Text(
           distCm == null ? '— সেমি' : '${distCm.toStringAsFixed(1)} সেমি',
           style: Theme.of(
@@ -323,7 +323,7 @@ class FusionDebugCard extends StatelessWidget {
     if (c == null) {
       centerText = '—';
     } else if (c == '__obstacle__') {
-      centerText = 'বাধা (সোনার)';
+      centerText = 'বাধা (আল্ট্রাসনিক)';
     } else {
       centerText = distCm != null
           ? '$c @ ${(distCm / 100).toStringAsFixed(1)} m'
