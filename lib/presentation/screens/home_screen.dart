@@ -12,6 +12,7 @@ import '../../services/device_info_service.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
 import '../../services/sensor_fusion_service.dart';
+import '../../services/settings_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/colorful_waveform.dart';
@@ -288,6 +289,10 @@ class _HomeScreenState extends State<HomeScreen>
     _vibrationTimer = null;
     Vibration.cancel();
 
+    // User preference — checked after the cancel above so turning the setting
+    // off also silences an already-running loop on the next verdict change.
+    if (!SettingsService.instance.vibrationEnabled) return;
+
     switch (verdict) {
       case ObstacleVerdict.critical:
         // Near-continuous opening burst: five 600 ms pulses separated by
@@ -385,19 +390,41 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  /// Voice-navigate to [route] without ever stacking duplicates: collapse the
+  /// stack back to home first, then push the target. Repeating a command
+  /// ("আমি কোথায়" twice) re-opens the screen fresh instead of piling copies
+  /// the user would have to back out of one by one.
+  void _voiceGoTo(String route, {Object? arguments}) {
+    Navigator.popUntil(context, ModalRoute.withName(AppRoutes.home));
+    if (route != AppRoutes.home) {
+      Navigator.pushNamed(context, route, arguments: arguments);
+    }
+  }
+
   void _setupNavigationCallback() {
     _voiceService.onNavigationAction = (action) {
       switch (action) {
         case VoiceAction.navigateHome:
+          _voiceGoTo(AppRoutes.home);
+          break;
+        case VoiceAction.goBack:
+          // Voice equivalent of the back button. From home there is nowhere
+          // to go — say so instead of doing nothing silently.
+          final nav = Navigator.of(context);
+          if (nav.canPop()) {
+            nav.pop();
+          } else {
+            _voiceService.speak('আপনি এখন হোম পেইজেই আছেন।');
+          }
           break;
         case VoiceAction.navigateLocation:
-          Navigator.pushNamed(context, AppRoutes.location);
+          _voiceGoTo(AppRoutes.location);
           break;
         case VoiceAction.navigateSettings:
-          Navigator.pushNamed(context, AppRoutes.settings);
+          _voiceGoTo(AppRoutes.settings);
           break;
         case VoiceAction.navigateHelp:
-          Navigator.pushNamed(context, AppRoutes.help);
+          _voiceGoTo(AppRoutes.help);
           break;
         case VoiceAction.speakBattery:
           _speakBatteryLevel();
@@ -408,22 +435,21 @@ class _HomeScreenState extends State<HomeScreen>
           );
           break;
         case VoiceAction.describeScene:
-          // Handled in-place by VoiceNavigationService (speaks the fusion
-          // scene description); nothing to route here.
+        case VoiceAction.repeatLast:
+        case VoiceAction.speechFaster:
+        case VoiceAction.speechSlower:
+        case VoiceAction.speakCommands:
+          // Handled in-place by VoiceNavigationService; nothing to route.
           break;
         case VoiceAction.triggerSos:
           // Open the SOS screen and auto-start the countdown so a voice
           // command ("জরুরি"/"বিপদ") fires the alert hands-free.
-          Navigator.pushNamed(
-            context,
-            AppRoutes.sos,
-            arguments: const {'autoStart': true},
-          );
+          _voiceGoTo(AppRoutes.sos, arguments: const {'autoStart': true});
           break;
         case VoiceAction.navigateEmergencyContacts:
           // Same SOS page, but no autoStart — opens it for managing contacts
           // without firing the alert countdown.
-          Navigator.pushNamed(context, AppRoutes.sos);
+          _voiceGoTo(AppRoutes.sos);
           break;
         case VoiceAction.none:
           break;

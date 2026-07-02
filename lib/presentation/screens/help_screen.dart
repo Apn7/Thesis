@@ -1,10 +1,36 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import '../../core/utils/voice_announcer.dart';
+import '../../services/voice_navigation_service.dart';
 
-/// Help screen with tutorials and command list
-class HelpScreen extends StatelessWidget {
+/// Help screen with tutorials and the command list.
+///
+/// Voice first: the whole command list can be *heard* — via the big
+/// "সব কমান্ড শুনুন" button here, or from anywhere by saying "কী বলতে পারি".
+/// The visible list below mirrors [VoiceNavigationService.commandTour] so the
+/// spoken and written help never drift apart.
+class HelpScreen extends StatefulWidget {
   const HelpScreen({super.key});
+
+  @override
+  State<HelpScreen> createState() => _HelpScreenState();
+}
+
+class _HelpScreenState extends State<HelpScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VoiceAnnouncer.announce(
+        'সাহায্য পেইজ। সব কমান্ড শুনতে বলুন: কমান্ড বলো।',
+      );
+    });
+  }
+
+  void _speakCommandTour() {
+    VoiceAnnouncer.announce(VoiceNavigationService.commandTour);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +78,24 @@ class HelpScreen extends StatelessWidget {
               ),
             ),
 
+            SizedBox(height: AppConstants.spacingL),
+
+            // Hear-all-commands — the primary help action for a voice user.
+            FilledButton.icon(
+              onPressed: _speakCommandTour,
+              icon: const Icon(Icons.volume_up),
+              label: const Text('সব কমান্ড শুনুন'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(
+                  AppConstants.largeTouchTargetSize,
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
             SizedBox(height: AppConstants.spacingXl),
 
             // Quick Start Guide
@@ -60,33 +104,33 @@ class HelpScreen extends StatelessWidget {
             _buildStepCard(
               context,
               step: '১',
-              title: 'হোম স্ক্রিনে যান',
-              description: 'অ্যাপ খুললেই আপনি হোম স্ক্রিনে চলে আসবেন।',
-              icon: Icons.home,
-              color: AppColors.primary,
-            ),
-
-            _buildStepCard(
-              context,
-              step: '২',
-              title: 'ভয়েস কমান্ড বলুন',
-              description: 'ভলিউম বোতাম চেপে ধরে আপনার কমান্ড বলুন।',
+              title: 'ভলিউম বোতাম চেপে ধরুন',
+              description: 'যেকোনো পেইজ থেকে ভলিউম বোতাম চেপে ধরে কথা বলুন।',
               icon: Icons.mic,
               color: AppColors.accent,
             ),
 
             _buildStepCard(
               context,
+              step: '২',
+              title: 'কমান্ড বলে বোতাম ছাড়ুন',
+              description: 'বোতাম ছাড়লেই আপনার কথা পাঠানো হয়।',
+              icon: Icons.record_voice_over,
+              color: AppColors.primary,
+            ),
+
+            _buildStepCard(
+              context,
               step: '৩',
               title: 'অডিও উত্তর শুনুন',
-              description: 'অ্যাপ অডিও উত্তরের মাধ্যমে আপনাকে পথ দেখাবে।',
+              description: 'অ্যাপ অডিও উত্তর দেবে। আবার শুনতে বলুন: আবার বলো।',
               icon: Icons.volume_up,
               color: AppColors.info,
             ),
 
             SizedBox(height: AppConstants.spacingXl),
 
-            // Voice Commands List
+            // Voice Commands List — mirrors VoiceNavigationService.commandTour.
             _buildSectionHeader(context, 'ভয়েস কমান্ড'),
 
             Card(
@@ -94,44 +138,16 @@ class HelpScreen extends StatelessWidget {
                 children: [
                   _buildCommandTile(
                     'আমি কোথায়?',
-                    'আপনার বর্তমান অবস্থান দেখায়',
+                    'আপনার অবস্থান ও ঠিকানা বলে',
                     Icons.location_on,
                     AppColors.info,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
-                    'সেটিংস',
-                    'সেটিংস মেনু খোলে',
-                    Icons.settings,
-                    AppColors.primary,
-                  ),
-                  const Divider(height: 1),
-                  _buildCommandTile(
-                    'সাহায্য',
-                    'এই সাহায্য পেইজ দেখায়',
-                    Icons.help,
-                    AppColors.success,
-                  ),
-                  const Divider(height: 1),
-                  _buildCommandTile(
-                    'হোম',
-                    'হোম স্ক্রিনে ফিরে যায়',
-                    Icons.home,
-                    AppColors.accent,
-                  ),
-                  const Divider(height: 1),
-                  _buildCommandTile(
                     'সামনে কী আছে?',
-                    'সামনের সনাক্ত হওয়া বস্তু বর্ণনা করে',
+                    'ক্যামেরায় দেখা বস্তু বর্ণনা করে',
                     Icons.visibility,
                     AppColors.warning,
-                  ),
-                  const Divider(height: 1),
-                  _buildCommandTile(
-                    'ব্যাটারি',
-                    'ব্যাটারির পরিমাণ জানায়',
-                    Icons.battery_charging_full,
-                    AppColors.error,
                   ),
                   const Divider(height: 1),
                   _buildCommandTile(
@@ -143,9 +159,65 @@ class HelpScreen extends StatelessWidget {
                   const Divider(height: 1),
                   _buildCommandTile(
                     'জরুরি যোগাযোগ',
-                    'জরুরি যোগাযোগ পেইজ খোলে — সেখানে বলুন: যোগ করো, পড়ো, মুছো, বদলাও, একজনকে পাঠাও',
+                    'যোগাযোগ পেইজ খোলে — সেখানে বলুন: যোগ করো, পড়ো, মুছো, বদলাও, একজনকে পাঠাও',
                     Icons.contacts,
                     AppColors.info,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'ব্যাটারি',
+                    'ফোনের চার্জ কত জানায়',
+                    Icons.battery_charging_full,
+                    AppColors.success,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'সময় কত?',
+                    'এখনকার সময় বলে',
+                    Icons.access_time,
+                    AppColors.primary,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'আবার বলো',
+                    'শেষ উত্তরটি আবার শোনায়',
+                    Icons.replay,
+                    AppColors.accent,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'ধীরে বলো / দ্রুত বলো',
+                    'কথার গতি কমায় বা বাড়ায়',
+                    Icons.speed,
+                    AppColors.warning,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'পিছনে যাও',
+                    'আগের পেইজে ফিরে যায়',
+                    Icons.arrow_back,
+                    AppColors.textSecondary,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'হোম',
+                    'হোম স্ক্রিনে ফিরে যায়',
+                    Icons.home,
+                    AppColors.accent,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'সেটিংস / সাহায্য',
+                    'সেটিংস বা এই সাহায্য পেইজ খোলে',
+                    Icons.settings,
+                    AppColors.primary,
+                  ),
+                  const Divider(height: 1),
+                  _buildCommandTile(
+                    'কী বলতে পারি?',
+                    'এই কমান্ডগুলোর তালিকা পড়ে শোনায়',
+                    Icons.help,
+                    AppColors.success,
                   ),
                 ],
               ),
@@ -172,8 +244,9 @@ class HelpScreen extends StatelessWidget {
 
             _buildTipCard(
               context,
-              icon: Icons.battery_charging_full,
-              tip: 'ব্যাটারি সেভার মোডে কম্পন কম হয়',
+              icon: Icons.touch_app,
+              tip:
+                  'অ্যাপ কথা বলার সময় ভলিউম বোতাম চাপলে সে থেমে আপনার কথা শোনে',
               color: AppColors.success,
             ),
 

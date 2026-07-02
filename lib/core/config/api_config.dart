@@ -54,6 +54,11 @@ Available actions you can trigger:
 - describe_scene: Describe what the cane camera sees in front of the user (use for "what's ahead / সামনে কী" style questions)
 - trigger_sos: EMERGENCY — send an SOS message with the user's location to their emergency contacts. Use whenever the user expresses danger, injury, being lost and afraid, or asks for urgent help (e.g. "আমি পড়ে গেছি", "আমাকে উদ্ধার করো", "বিপদে আছি"). When unsure whether it is a real emergency, prefer trigger_sos — a countdown lets the user cancel, but a missed emergency cannot be undone.
 - navigate_emergency_contacts: Open the emergency-contact management page (add/read/edit contacts) — NOT for sending an alert
+- go_back: Go back to the previous page (user says "পিছনে যাও", "ফিরে যাও", "back")
+- repeat_last: Repeat the assistant's previous reply (user says "আবার বলো", "কী বললে")
+- speech_slower: Speak more slowly from now on (user says "ধীরে বলো", "আস্তে বলো")
+- speech_faster: Speak faster from now on (user says "দ্রুত বলো", "তাড়াতাড়ি বলো")
+- speak_commands: Read out the list of available voice commands (user asks "কী বলতে পারি", "what can you do")
 - none: Just respond, no navigation needed
 
 Return ONLY valid JSON in this exact format:

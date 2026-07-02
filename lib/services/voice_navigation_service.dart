@@ -8,6 +8,7 @@ import 'groq_service.dart';
 import 'intent_matcher.dart';
 // import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
 import 'sensor_fusion_service.dart';
+import 'settings_service.dart';
 import 'speech_service.dart';
 import 'tts_service.dart';
 import '../core/utils/voice_announcer.dart';
@@ -30,6 +31,19 @@ enum VoiceAction {
 
   /// Open the emergency-contacts management page.
   navigateEmergencyContacts,
+
+  /// Pop the current screen — the voice equivalent of the back button.
+  goBack,
+
+  /// Speak the previous reply again (user missed or forgot it).
+  repeatLast,
+
+  /// Adjust the TTS pace one step up/down; persisted via [SettingsService].
+  speechFaster,
+  speechSlower,
+
+  /// Read out the full list of voice commands (spoken help).
+  speakCommands,
   none,
 }
 
@@ -343,6 +357,10 @@ class VoiceNavigationService extends ChangeNotifier {
         return;
       }
 
+      // Preserve the previous reply before overwriting so "আবার বলো"
+      // (repeat) can restate it — its own confirmation must not clobber
+      // the thing being repeated.
+      final previousResponse = _lastResponse;
       _lastResponse = response.spokenResponse;
       final action = _parseAction(response.action);
 
@@ -351,6 +369,22 @@ class VoiceNavigationService extends ChangeNotifier {
         // Answer from the live fusion window instead of speaking the canned
         // intent reply — this is what makes "what's in front of me?" useful.
         toSpeak = SensorFusionService.instance.getSceneDescription();
+        _lastResponse = toSpeak;
+      } else if (action == VoiceAction.repeatLast) {
+        toSpeak = previousResponse.isEmpty
+            ? 'পুনরায় বলার মতো কিছু নেই।'
+            : previousResponse;
+        _lastResponse = toSpeak;
+      } else if (action == VoiceAction.speechFaster ||
+          action == VoiceAction.speechSlower) {
+        // Apply the new pace *before* speaking so the confirmation itself
+        // demonstrates the change — the honest feedback a blind user needs.
+        toSpeak = await _adjustSpeechRate(
+          faster: action == VoiceAction.speechFaster,
+        );
+        _lastResponse = toSpeak;
+      } else if (action == VoiceAction.speakCommands) {
+        toSpeak = commandTour;
         _lastResponse = toSpeak;
       } else if (action == VoiceAction.none) {
         // Dead end — append a short reminder of what the user CAN say.
@@ -361,17 +395,23 @@ class VoiceNavigationService extends ChangeNotifier {
 
       // Speak the reply. Interruptible: a button press calls _tts.stop(), which
       // resolves this await early, and the turn check below discards the rest.
+      // The watchdog timeout scales with length so a long reply (e.g. the
+      // command tour) isn't force-idled mid-sentence. The thinking-phase
+      // watchdog is done its job by now — cancel it so it can't blurt
+      // "সময় শেষ" over a long reply.
+      watchdog.cancel();
       _setState(VoiceState.speaking);
-      await VoiceAnnouncer.speak(
-        toSpeak,
-      ).timeout(const Duration(seconds: 15), onTimeout: () {});
+      await VoiceAnnouncer.speak(toSpeak).timeout(
+        Duration(seconds: (15 + toSpeak.length ~/ 10).clamp(15, 90)),
+        onTimeout: () {},
+      );
 
       // Barged-in during playback? Don't navigate on an abandoned turn.
       if (turn != _turn) return;
 
-      // describeScene is answered in-place above; everything else that maps to
-      // a real action routes through the navigation callback.
-      if (action != VoiceAction.none && action != VoiceAction.describeScene) {
+      // Actions answered in-place above don't route; everything else that
+      // maps to a real action goes through the navigation callback.
+      if (action != VoiceAction.none && !_isHandledInPlace(action)) {
         onNavigationAction?.call(action);
       }
     } catch (e) {
@@ -392,6 +432,52 @@ class VoiceNavigationService extends ChangeNotifier {
         _setState(VoiceState.idle);
       }
     }
+  }
+
+  /// Actions that are fully answered inside [_processCommand] — they speak
+  /// their result directly and must not route through [onNavigationAction].
+  bool _isHandledInPlace(VoiceAction action) =>
+      action == VoiceAction.describeScene ||
+      action == VoiceAction.repeatLast ||
+      action == VoiceAction.speechFaster ||
+      action == VoiceAction.speechSlower ||
+      action == VoiceAction.speakCommands;
+
+  /// The spoken command tour — the full "what can I say" list, shared with the
+  /// help screen so what the user hears always matches what is documented.
+  static const String commandTour =
+      'আপনি যা যা বলতে পারেন: '
+      'আমি কোথায় — আপনার অবস্থান ও ঠিকানা বলবে। '
+      'সামনে কী আছে — ক্যামেরায় দেখা বস্তু বর্ণনা করবে। '
+      'জরুরি অথবা বাঁচাও — জরুরি যোগাযোগে অবস্থানসহ বার্তা পাঠাবে। '
+      'জরুরি যোগাযোগ — যোগাযোগ যোগ, মুছা বা বদলানোর পেইজ খুলবে। '
+      'ব্যাটারি — চার্জ কত জানাবে। '
+      'সময় কত — এখনকার সময় বলবে। '
+      'আবার বলো — শেষ কথাটি আবার শোনাবে। '
+      'ধীরে বলো বা দ্রুত বলো — কথার গতি বদলাবে। '
+      'পিছনে যাও — আগের পেইজে ফিরবে। '
+      'হোম — মূল পাতায় ফিরবে। '
+      'এছাড়া সেটিংস ও সাহায্য বলতে পারেন।';
+
+  /// Nudge the speech rate one step and persist it. Returns the confirmation
+  /// to speak — spoken *at the new rate*, so the change proves itself.
+  Future<String> _adjustSpeechRate({required bool faster}) async {
+    final settings = SettingsService.instance;
+    final current = settings.speechRateMultiplier;
+    final next = (current + (faster ? 1 : -1) * SettingsService.speechRateStep)
+        .clamp(SettingsService.speechRateMin, SettingsService.speechRateMax);
+
+    if (next == current) {
+      return faster ? 'কথার গতি এখনই সর্বোচ্চ।' : 'কথার গতি এখনই সবচেয়ে ধীর।';
+    }
+
+    await settings.setSpeechRateMultiplier(next);
+    try {
+      await _tts.setSpeechRate(settings.ttsSpeechRate);
+    } catch (e) {
+      debugPrint('[VOICE] !! setSpeechRate failed: $e');
+    }
+    return faster ? 'কথার গতি বাড়ানো হলো।' : 'কথার গতি কমানো হলো।';
   }
 
   /// Two-tier cloud LLM: tries Groq first (fast LPU), silently falls back to
@@ -627,6 +713,16 @@ class VoiceNavigationService extends ChangeNotifier {
         return VoiceAction.triggerSos;
       case 'navigate_emergency_contacts':
         return VoiceAction.navigateEmergencyContacts;
+      case 'go_back':
+        return VoiceAction.goBack;
+      case 'repeat_last':
+        return VoiceAction.repeatLast;
+      case 'speech_faster':
+        return VoiceAction.speechFaster;
+      case 'speech_slower':
+        return VoiceAction.speechSlower;
+      case 'speak_commands':
+        return VoiceAction.speakCommands;
       default:
         return VoiceAction.none;
     }

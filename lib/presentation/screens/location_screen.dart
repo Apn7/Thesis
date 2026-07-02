@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import '../../core/utils/voice_announcer.dart';
 import '../../services/location_service.dart';
 import '../widgets/info_card.dart';
 
-/// Location screen displaying GPS coordinates and address
+/// Location screen: fetches GPS + address and — voice first — *speaks* the
+/// result. The screen text mirrors what is spoken, never replaces it: a blind
+/// user must get the answer without touching or reading anything.
 class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key});
 
@@ -18,6 +21,10 @@ class _LocationScreenState extends State<LocationScreen> {
   String _latitude = '--';
   String _longitude = '--';
   String _address = 'অবস্থান লোড হচ্ছে...';
+
+  /// Short spoken form of the address; kept so "ঠিকানা বলুন" can re-announce
+  /// without re-fetching.
+  String _spokenAddress = '';
   bool _isLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
@@ -25,14 +32,22 @@ class _LocationScreenState extends State<LocationScreen> {
   @override
   void initState() {
     super.initState();
-    // Fetch location on screen load
+    // Orient the user, then fetch. The entry line is short so the address
+    // announcement (seconds later, after GPS + geocoding) never collides.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      VoiceAnnouncer.announce('অবস্থান পেইজ। জিপিএস থেকে অবস্থান নিচ্ছি।');
       _fetchLocation();
     });
   }
 
+  /// Speak the fetched address — the entire point of this screen for a blind
+  /// user. Repeatable via the "ঠিকানা বলুন" button.
   void _announceLocation() {
-    debugPrint('Location: $_address');
+    if (_spokenAddress.isEmpty) {
+      VoiceAnnouncer.announce('ঠিকানা এখনো পাওয়া যায়নি।');
+      return;
+    }
+    VoiceAnnouncer.announce('আপনি এখন $_spokenAddress এলাকায় আছেন।');
   }
 
   Future<void> _fetchLocation() async {
@@ -50,17 +65,11 @@ class _LocationScreenState extends State<LocationScreen> {
       setState(() {
         _latitude = locationData.latitudeFormatted;
         _longitude = locationData.longitudeFormatted;
-        _address = locationData.addressEn;
+        _address = locationData.addressBn;
+        _spokenAddress = locationData.addressSpoken;
         _isLoading = false;
         _hasError = false;
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('অবস্থান পাওয়া গেছে'),
-          duration: Duration(seconds: 2),
-        ),
-      );
       _announceLocation();
     } else {
       setState(() {
@@ -71,11 +80,19 @@ class _LocationScreenState extends State<LocationScreen> {
         _latitude = '--';
         _longitude = '--';
         _address = 'অবস্থান পাওয়া যায়নি';
+        _spokenAddress = '';
       });
+      // The error must be *heard*, not just shown — and end with a way
+      // forward so it is never a dead end.
+      VoiceAnnouncer.announce(
+        'অবস্থান পাওয়া যায়নি। জিপিএস চালু আছে কি না দেখুন, '
+        'তারপর রিফ্রেশ বোতাম চাপুন।',
+      );
     }
   }
 
   Future<void> _refreshLocation() async {
+    VoiceAnnouncer.announce('অবস্থান আবার নিচ্ছি।');
     await _fetchLocation();
   }
 
@@ -175,7 +192,7 @@ class _LocationScreenState extends State<LocationScreen> {
               // Loading Indicator
               if (_isLoading)
                 Container(
-                  height: 200,
+                  height: 160,
                   decoration: BoxDecoration(
                     color: AppColors.primaryLight.withAlpha(77),
                     borderRadius: BorderRadius.circular(AppConstants.radiusM),
@@ -195,42 +212,9 @@ class _LocationScreenState extends State<LocationScreen> {
                   ),
                 ),
 
-              // Map Placeholder (when not loading)
-              if (!_isLoading)
-                Card(
-                  elevation: 4,
-                  child: Container(
-                    height: 200,
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight.withAlpha(77),
-                      borderRadius: BorderRadius.circular(AppConstants.radiusM),
-                    ),
-                    child: Semantics(
-                      label: 'মানচিত্র। ভবিষ্যতে চালু হবে।',
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.map,
-                              size: AppConstants.iconXxl,
-                              color: AppColors.primary,
-                            ),
-                            SizedBox(height: AppConstants.spacingM),
-                            Text(
-                              'মানচিত্র এখানে আসবে',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
+              if (_isLoading) SizedBox(height: AppConstants.spacingXl),
 
-              SizedBox(height: AppConstants.spacingXl),
-
-              // Address Section
+              // Address Section — the primary answer, first on the page.
               Semantics(
                 header: true,
                 label: 'ঠিকানার তথ্য',
@@ -280,9 +264,28 @@ class _LocationScreenState extends State<LocationScreen> {
                 ),
               ),
 
+              SizedBox(height: AppConstants.spacingL),
+
+              // Primary action: hear the address again. Full-width, first in
+              // focus order after the address — the button a blind user wants.
+              FilledButton.icon(
+                onPressed: _isLoading ? null : _announceLocation,
+                icon: const Icon(Icons.volume_up),
+                label: const Text('ঠিকানা বলুন'),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(
+                    AppConstants.minTouchTargetSize,
+                  ),
+                  padding: EdgeInsets.symmetric(
+                    vertical: AppConstants.spacingL,
+                  ),
+                ),
+              ),
+
               SizedBox(height: AppConstants.spacingXl),
 
-              // Coordinates Section
+              // Coordinates Section — secondary detail, useful when relaying
+              // the position to a sighted helper or emergency services.
               Semantics(
                 header: true,
                 label: 'স্থানাঙ্ক',
@@ -317,45 +320,6 @@ class _LocationScreenState extends State<LocationScreen> {
               ),
 
               SizedBox(height: AppConstants.spacingXl),
-
-              // Action Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: _isLoading ? null : _refreshLocation,
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('রিফ্রেশ'),
-                      style: FilledButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          vertical: AppConstants.spacingL,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: AppConstants.spacingM),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('অবস্থান সংরক্ষণ করা হয়েছে'),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.save),
-                      label: const Text('সংরক্ষণ'),
-                      style: OutlinedButton.styleFrom(
-                        padding: EdgeInsets.symmetric(
-                          vertical: AppConstants.spacingL,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              SizedBox(height: AppConstants.spacingL),
 
               // Info Box
               Container(

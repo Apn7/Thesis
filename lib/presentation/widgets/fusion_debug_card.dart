@@ -53,7 +53,10 @@ class FusionDebugCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _header(context, fusion),
-                Divider(height: 16, color: AppColors.primary.withValues(alpha: 0.15)),
+                Divider(
+                  height: 16,
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                ),
                 bayes ? _metricsRowV2(context, fusion) : _metricsRow(fusion),
                 SizedBox(height: AppConstants.spacingS),
                 _distanceRow(context, distCm, verdict),
@@ -64,7 +67,10 @@ class FusionDebugCard extends StatelessWidget {
                   _confirmedZones(context, fusion, distCm),
                 SizedBox(height: AppConstants.spacingS),
                 _lastAnnouncement(context, fusion),
-                Divider(height: 16, color: AppColors.primary.withValues(alpha: 0.15)),
+                Divider(
+                  height: 16,
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                ),
                 _rawDetections(context, dets),
               ],
             ),
@@ -188,10 +194,7 @@ class FusionDebugCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Left tier color indicator strip
-              Container(
-                width: 4,
-                color: tierColor,
-              ),
+              Container(width: 4, color: tierColor),
               Expanded(
                 child: Padding(
                   padding: EdgeInsets.symmetric(
@@ -210,9 +213,8 @@ class FusionDebugCard extends StatelessWidget {
                           Expanded(
                             child: Text(
                               name,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -225,9 +227,8 @@ class FusionDebugCard extends StatelessWidget {
                           else if (!live)
                             Text(
                               'mem',
-                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(color: AppColors.textSecondary),
                             ),
                         ],
                       ),
@@ -236,9 +237,9 @@ class FusionDebugCard extends StatelessWidget {
                       SizedBox(height: AppConstants.spacingXs / 2),
                       Text(
                         facts.join('  ·  '),
-                        style: Theme.of(
-                          context,
-                        ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AppColors.textSecondary,
+                        ),
                       ),
                     ],
                   ),
@@ -438,9 +439,7 @@ class FusionDebugCard extends StatelessWidget {
                 SizedBox(height: AppConstants.spacingXs / 2),
                 Text(
                   text,
-                  style: Theme.of(
-                    context,
-                  ).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     fontStyle: FontStyle.italic,
                     fontWeight: FontWeight.w500,
                   ),
@@ -569,10 +568,7 @@ class FusionDebugCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: color.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
       ),
       child: Text(
         text,

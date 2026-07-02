@@ -10,6 +10,11 @@ class LocationData {
   final double longitude;
   final String addressBn;
   final String addressEn;
+
+  /// Short spoken form (road, neighbourhood, city) — what TTS reads aloud.
+  /// The full [addressBn] is a postal hierarchy that takes ~20 s to speak;
+  /// this is the part a person actually needs to orient themselves.
+  final String addressSpoken;
   final DateTime timestamp;
 
   LocationData({
@@ -17,6 +22,7 @@ class LocationData {
     required this.longitude,
     required this.addressBn,
     required this.addressEn,
+    required this.addressSpoken,
     required this.timestamp,
   });
 
@@ -88,8 +94,9 @@ class LocationService {
       return LocationData(
         latitude: position.latitude,
         longitude: position.longitude,
-        addressBn: address,
-        addressEn: address,
+        addressBn: address.full,
+        addressEn: address.full,
+        addressSpoken: address.spoken,
         timestamp: DateTime.now(),
       );
     } catch (e) {
@@ -98,8 +105,44 @@ class LocationService {
     }
   }
 
+  static const String _addressUnavailable = 'ঠিকানা পাওয়া যায়নি';
+
+  /// Build the short spoken form of a Nominatim `address` object: the two or
+  /// three most local, human-meaningful parts (road → area → city). Public
+  /// static so it is unit-testable without network.
+  ///
+  /// Returns [fallback] when the object has none of the wanted parts.
+  static String spokenAddressFromParts(
+    Map<String, dynamic> address, {
+    required String fallback,
+  }) {
+    String? first(List<String> keys) {
+      for (final k in keys) {
+        final v = address[k];
+        if (v is String && v.trim().isNotEmpty) return v.trim();
+      }
+      return null;
+    }
+
+    final candidates = <String?>[
+      first(['road', 'pedestrian', 'footway']),
+      first(['neighbourhood', 'quarter', 'suburb', 'residential']),
+      first(['city', 'town', 'village', 'municipality', 'county']),
+    ];
+    final parts = candidates.whereType<String>().toList();
+
+    return parts.isEmpty ? fallback : parts.join(', ');
+  }
+
   /// Reverse geocoding using OpenStreetMap Nominatim API (works on web + mobile)
-  Future<String> _reverseGeocodeHTTP(double lat, double lon) async {
+  Future<({String full, String spoken})> _reverseGeocodeHTTP(
+    double lat,
+    double lon,
+  ) async {
+    const unavailable = (
+      full: _addressUnavailable,
+      spoken: _addressUnavailable,
+    );
     try {
       debugPrint('Attempting HTTP reverse geocoding for: $lat, $lon');
 
@@ -118,50 +161,29 @@ class LocationService {
           )
           .timeout(const Duration(seconds: 10));
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-        debugPrint('Nominatim response: ${response.body}');
-
-        // Get display name (full formatted address)
-        if (data.containsKey('display_name')) {
-          final displayName = data['display_name'] as String;
-          debugPrint('Address found: $displayName');
-          return displayName;
-        }
-
-        // Fallback: build address from parts
-        if (data.containsKey('address')) {
-          final address = data['address'] as Map<String, dynamic>;
-          final parts = <String>[];
-
-          // Add relevant address parts
-          if (address['road'] != null) parts.add(address['road']);
-          if (address['neighbourhood'] != null) {
-            parts.add(address['neighbourhood']);
-          }
-          if (address['suburb'] != null) parts.add(address['suburb']);
-          if (address['city'] != null) parts.add(address['city']);
-          if (address['town'] != null) parts.add(address['town']);
-          if (address['village'] != null) parts.add(address['village']);
-          if (address['state'] != null) parts.add(address['state']);
-          if (address['country'] != null) parts.add(address['country']);
-
-          if (parts.isNotEmpty) {
-            final formattedAddress = parts.join(', ');
-            debugPrint('Address built from parts: $formattedAddress');
-            return formattedAddress;
-          }
-        }
-
-        return 'Address not available';
-      } else {
+      if (response.statusCode != 200) {
         debugPrint('Nominatim API error: ${response.statusCode}');
-        return 'Address not available';
+        return unavailable;
       }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      debugPrint('Nominatim response: ${response.body}');
+
+      final displayName = data['display_name'] as String?;
+      final addressParts = data['address'];
+
+      // Full form for the screen; short form for the voice. When the parts
+      // object is missing, fall back to the display name for both.
+      final full = displayName ?? _addressUnavailable;
+      final spoken = addressParts is Map<String, dynamic>
+          ? spokenAddressFromParts(addressParts, fallback: full)
+          : full;
+
+      debugPrint('Address found: full="$full" spoken="$spoken"');
+      return (full: full, spoken: spoken);
     } catch (e) {
       debugPrint('HTTP Geocoding error: $e');
-      return 'Address not available';
+      return unavailable;
     }
   }
 

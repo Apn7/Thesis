@@ -249,6 +249,119 @@
         "jogajog babosthapona"
       ],
       "response": "জরুরি যোগাযোগ পেইজ খুলছি"
+    },
+    {
+      "action": "go_back",
+      "phrases": [
+        "পিছনে যাও",
+        "পেছনে যাও",
+        "ফিরে যাও",
+        "আগের পেইজ",
+        "আগের পেইজে যাও",
+        "আগের পাতায় যাও",
+        "ব্যাক",
+        "ব্যাক করো",
+        "go back",
+        "back",
+        "previous page",
+        "take me back",
+        "pichone jao",
+        "pechone jao",
+        "fire jao",
+        "back koro",
+        "ager page e jao",
+        "ager page"
+      ],
+      "response": "পিছনে যাচ্ছি"
+    },
+    {
+      "action": "repeat_last",
+      "phrases": [
+        "আবার বলো",
+        "আবার বল",
+        "আরেকবার বলো",
+        "আবার শোনাও",
+        "পুনরায় বলো",
+        "কী বললে",
+        "কি বললে",
+        "বুঝিনি আবার বলো",
+        "repeat",
+        "say again",
+        "say that again",
+        "repeat that",
+        "what did you say",
+        "abar bolo",
+        "abar bol",
+        "arekbar bolo",
+        "abar shonao",
+        "ki bolle"
+      ],
+      "response": "আবার বলছি"
+    },
+    {
+      "action": "speech_slower",
+      "phrases": [
+        "ধীরে বলো",
+        "আস্তে বলো",
+        "আরো ধীরে বলো",
+        "কথা ধীরে বলো",
+        "কথার গতি কমাও",
+        "গতি কমাও",
+        "speak slower",
+        "slow down",
+        "talk slower",
+        "speak slowly",
+        "dhire bolo",
+        "aste bolo",
+        "aro dhire bolo",
+        "kotha dhire bolo",
+        "goti komao"
+      ],
+      "response": "কথার গতি কমাচ্ছি"
+    },
+    {
+      "action": "speech_faster",
+      "phrases": [
+        "দ্রুত বলো",
+        "তাড়াতাড়ি বলো",
+        "আরো দ্রুত বলো",
+        "কথা দ্রুত বলো",
+        "কথার গতি বাড়াও",
+        "গতি বাড়াও",
+        "speak faster",
+        "talk faster",
+        "speed up",
+        "druto bolo",
+        "taratari bolo",
+        "aro druto bolo",
+        "kotha druto bolo",
+        "goti barao"
+      ],
+      "response": "কথার গতি বাড়াচ্ছি"
+    },
+    {
+      "action": "speak_commands",
+      "phrases": [
+        "কমান্ড বলো",
+        "কী বলতে পারি",
+        "কি বলতে পারি",
+        "কী কী বলা যায়",
+        "কি কি বলা যায়",
+        "কী করতে পারো",
+        "কি করতে পারো",
+        "সব কমান্ড বলো",
+        "কমান্ড শোনাও",
+        "what can i say",
+        "what can you do",
+        "list commands",
+        "voice commands",
+        "command bolo",
+        "ki bolte pari",
+        "ki ki bola jay",
+        "ki korte paro",
+        "shob command bolo"
+      ],
+      "response": "কমান্ডগুলো বলছি"
     }
   ]
 }

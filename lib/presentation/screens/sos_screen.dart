@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/bangla_format.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
 import '../../models/emergency_contact.dart';
@@ -75,6 +76,17 @@ class _SosScreenState extends State<SosScreen> {
       if (args is Map && args['autoStart'] == true) {
         _autoStartHandled = true;
         _startCountdown();
+      } else {
+        // Opened for contact management — orient the user and name the
+        // spoken commands this screen understands.
+        VoiceAnnouncer.announce(
+          _contacts.isEmpty
+              ? 'জরুরি যোগাযোগ পেইজ। কোনো যোগাযোগ সংরক্ষিত নেই। '
+                    'যোগ করতে বলুন: যোগাযোগ যোগ করো।'
+              : 'জরুরি যোগাযোগ পেইজ। ${BanglaFormat.digits(_contacts.length)} '
+                    'জন সংরক্ষিত। বলুন: যোগ করো, পড়ো, মুছো, বদলাও, '
+                    'বা একজনকে পাঠাও।',
+        );
       }
     });
   }

@@ -17,9 +17,65 @@ class SettingsService extends ChangeNotifier {
 
   static const _kLangKey = 'stt_language_mode';
   static const _kSosContactsKey = 'sos_emergency_contacts';
+  static const _kSpeechRateKey = 'tts_speech_rate_multiplier';
+  static const _kVibrationKey = 'vibration_enabled';
 
   /// Always `'bn'` — the app speaks and listens in Bengali only.
   String get languageMode => 'bn';
+
+  // ── Speech rate ───────────────────────────────────────────────────────
+
+  /// User-facing speech-rate multiplier: 1.0 is the default pace, range
+  /// 0.5×–2.0×. The actual engine rate is derived via [ttsSpeechRate].
+  static const double speechRateMin = 0.5;
+  static const double speechRateMax = 2.0;
+  static const double speechRateStep = 0.25;
+
+  /// flutter_tts engine rate that corresponds to multiplier 1.0. Chosen for
+  /// clear Bengali at default settings; the multiplier scales around it.
+  static const double _engineBaseRate = 0.45;
+
+  double _speechRateMultiplier = 1.0;
+  double get speechRateMultiplier => _speechRateMultiplier;
+
+  /// The engine-level rate to pass to `TtsService.setSpeechRate`.
+  double get ttsSpeechRate =>
+      (_engineBaseRate * _speechRateMultiplier).clamp(0.15, 1.0);
+
+  Future<void> setSpeechRateMultiplier(double multiplier) async {
+    _speechRateMultiplier = multiplier.clamp(speechRateMin, speechRateMax);
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kSpeechRateKey, _speechRateMultiplier);
+    } catch (e) {
+      debugPrint('SettingsService: failed to persist speech rate: $e');
+    }
+  }
+
+  // ── Vibration ─────────────────────────────────────────────────────────
+
+  bool _vibrationEnabled = true;
+  bool get vibrationEnabled => _vibrationEnabled;
+
+  Future<void> setVibrationEnabled(bool enabled) async {
+    _vibrationEnabled = enabled;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kVibrationKey, enabled);
+    } catch (e) {
+      debugPrint('SettingsService: failed to persist vibration: $e');
+    }
+  }
+
+  /// Restore every user preference to its default and persist. Used by the
+  /// settings screen's reset action — resets *real* stored values, not just
+  /// widget state.
+  Future<void> resetToDefaults() async {
+    await setSpeechRateMultiplier(1.0);
+    await setVibrationEnabled(true);
+  }
 
   /// Emergency contacts the SOS feature alerts, in priority order (index 0 is
   /// contacted first). In-memory cache loaded once in [load]; mutations persist
@@ -35,9 +91,15 @@ class SettingsService extends ChangeNotifier {
       await prefs.setString(_kLangKey, 'bn');
     }
     _sosContacts = _decodeContacts(prefs.getString(_kSosContactsKey));
+    _speechRateMultiplier = (prefs.getDouble(_kSpeechRateKey) ?? 1.0).clamp(
+      speechRateMin,
+      speechRateMax,
+    );
+    _vibrationEnabled = prefs.getBool(_kVibrationKey) ?? true;
     debugPrint(
       'SettingsService: loaded (language fixed at bn, '
-      'sosContacts=${_sosContacts.length})',
+      'sosContacts=${_sosContacts.length}, '
+      'speechRate=${_speechRateMultiplier}x, vibration=$_vibrationEnabled)',
     );
   }
 

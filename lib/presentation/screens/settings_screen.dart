@@ -3,9 +3,18 @@ import 'package:flutter/material.dart';
 import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
+import '../../core/utils/voice_announcer.dart';
 import '../../services/settings_service.dart';
+import '../../services/tts_service.dart';
 
-/// Settings screen for app configuration
+/// Settings screen — every control here is real: it persists via
+/// [SettingsService] and takes effect immediately. No placeholder toggles; a
+/// blind user cannot see that a switch "does nothing", so a dead control is
+/// worse than no control.
+///
+/// Voice equivalents exist for the key settings ("ধীরে বলো" / "দ্রুত বলো"
+/// adjust the same speech rate), so the screen is a touch fallback, not the
+/// only path.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -14,13 +23,47 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  double _speechRate = 1.0;
-  bool _vibrationEnabled = true;
-  bool _voiceConfirmationEnabled = true;
-  bool _batterySaverMode = false;
+  final SettingsService _settings = SettingsService.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    // Rebuild when a voice command ("দ্রুত বলো") changes a setting while this
+    // screen is open — the slider must track the real stored value.
+    _settings.addListener(_onSettingsChanged);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      VoiceAnnouncer.announce(
+        'সেটিংস পেইজ। কথার গতি আর কম্পন এখানে বদলানো যায়।',
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _settings.removeListener(_onSettingsChanged);
+    super.dispose();
+  }
+
+  void _onSettingsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Apply the new rate to the engine, persist it, and speak a sample at the
+  /// new pace so the user hears exactly what they chose.
+  Future<void> _applySpeechRate(double multiplier) async {
+    await _settings.setSpeechRateMultiplier(multiplier);
+    try {
+      await TtsService.instance.setSpeechRate(_settings.ttsSpeechRate);
+    } catch (e) {
+      debugPrint('SettingsScreen: setSpeechRate failed: $e');
+    }
+    VoiceAnnouncer.announce('কথার গতি এখন এরকম শোনাবে।');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final ratePercent = (_settings.speechRateMultiplier * 100).round();
+
     return Scaffold(
       appBar: AppBar(
         title: Semantics(
@@ -37,61 +80,61 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSectionHeader(context, 'ভয়েস সেটিংস'),
 
             Card(
-              child: Column(
-                children: [
-                  Padding(
-                    padding: EdgeInsets.all(AppConstants.spacingL),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+              child: Padding(
+                padding: EdgeInsets.all(AppConstants.spacingL),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.speed),
-                            SizedBox(width: AppConstants.spacingM),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('কথা বলার গতি'),
-                                  Text(
-                                    '${(_speechRate * 100).round()}%',
-                                    style: Theme.of(context).textTheme.bodySmall
-                                        ?.copyWith(
-                                          color: AppColors.textSecondary,
-                                        ),
-                                  ),
-                                ],
+                        const Icon(Icons.speed),
+                        SizedBox(width: AppConstants.spacingM),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('কথা বলার গতি'),
+                              Text(
+                                '$ratePercent%',
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: AppColors.textSecondary),
                               ),
-                            ),
-                          ],
-                        ),
-                        Slider(
-                          value: _speechRate,
-                          min: 0.5,
-                          max: 2.0,
-                          divisions: 15,
-                          label: '${(_speechRate * 100).round()}%',
-                          onChanged: (value) {
-                            setState(() {
-                              _speechRate = value;
-                            });
-                          },
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    secondary: const Icon(Icons.check_circle_outline),
-                    title: const Text('ভয়েস নিশ্চিতকরণ'),
-                    value: _voiceConfirmationEnabled,
-                    onChanged: (value) {
-                      setState(() {
-                        _voiceConfirmationEnabled = value;
-                      });
-                    },
-                  ),
-                ],
+                    Semantics(
+                      slider: true,
+                      label: 'কথা বলার গতি, এখন $ratePercent শতাংশ',
+                      child: Slider(
+                        value: _settings.speechRateMultiplier,
+                        min: SettingsService.speechRateMin,
+                        max: SettingsService.speechRateMax,
+                        divisions:
+                            ((SettingsService.speechRateMax -
+                                        SettingsService.speechRateMin) /
+                                    SettingsService.speechRateStep)
+                                .round(),
+                        label: '$ratePercent%',
+                        // Live drag just moves the thumb; commit (persist +
+                        // engine + spoken sample) happens on release so we
+                        // don't spam TTS on every tick.
+                        onChanged: (value) {
+                          setState(() {});
+                          _settings.setSpeechRateMultiplier(value);
+                        },
+                        onChangeEnd: _applySpeechRate,
+                      ),
+                    ),
+                    Text(
+                      'ভয়েস কমান্ডেও বদলানো যায়: "ধীরে বলো" বা "দ্রুত বলো"',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -101,30 +144,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSectionHeader(context, 'অ্যাক্সেসিবিলিটি'),
 
             Card(
-              child: Column(
-                children: [
-                  SwitchListTile(
-                    secondary: const Icon(Icons.vibration),
-                    title: const Text('ভাইব্রেশন ফিডব্যাক'),
-                    value: _vibrationEnabled,
-                    onChanged: (value) {
-                      setState(() {
-                        _vibrationEnabled = value;
-                      });
-                    },
+              child: SwitchListTile(
+                secondary: const Icon(Icons.vibration),
+                title: const Text('ভাইব্রেশন ফিডব্যাক'),
+                subtitle: Text(
+                  'বাধার সতর্কতায় ফোন কাঁপবে',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AppColors.textSecondary,
                   ),
-                  const Divider(height: 1),
-                  SwitchListTile(
-                    secondary: const Icon(Icons.battery_saver),
-                    title: const Text('ব্যাটারি সেভার মোড'),
-                    value: _batterySaverMode,
-                    onChanged: (value) {
-                      setState(() {
-                        _batterySaverMode = value;
-                      });
-                    },
-                  ),
-                ],
+                ),
+                value: _settings.vibrationEnabled,
+                onChanged: (value) async {
+                  await _settings.setVibrationEnabled(value);
+                  VoiceAnnouncer.announce(
+                    value ? 'ভাইব্রেশন চালু হয়েছে।' : 'ভাইব্রেশন বন্ধ হয়েছে।',
+                  );
+                },
               ),
             ),
 
@@ -181,7 +216,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     title: const Text('সাহায্য ও সহায়তা'),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                     onTap: () {
-                      Navigator.pushNamed(context, '/help');
+                      Navigator.pushNamed(context, AppRoutes.help);
                     },
                   ),
                 ],
@@ -264,29 +299,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showResetDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('রিসেট নিশ্চিত করুন'),
         content: const Text('সব সেটিংস ডিফল্ট মানে রিসেট করবেন?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('বাতিল'),
           ),
           FilledButton(
-            onPressed: () {
-              setState(() {
-                _speechRate = 1.0;
-                _vibrationEnabled = true;
-                _voiceConfirmationEnabled = true;
-                _batterySaverMode = false;
-              });
-              SettingsService.instance.setLanguageMode('bn');
-              Navigator.pop(context);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('সেটিংস রিসেট হয়েছে')),
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await _settings.resetToDefaults();
+              try {
+                await TtsService.instance.setSpeechRate(
+                  _settings.ttsSpeechRate,
                 );
+              } catch (e) {
+                debugPrint('SettingsScreen: reset setSpeechRate failed: $e');
               }
+              VoiceAnnouncer.announce('সব সেটিংস ডিফল্টে ফিরেছে।');
             },
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             child: const Text('রিসেট'),

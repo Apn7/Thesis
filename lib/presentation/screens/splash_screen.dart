@@ -218,6 +218,15 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _initServices() async {
     _update('সার্ভিস চালু হচ্ছে...', 0.94);
     await SettingsService.instance.load();
+    // Apply the persisted speech-rate preference now that it's loaded — TTS
+    // was initialised earlier (before load) at the engine default.
+    try {
+      await TtsService.instance.setSpeechRate(
+        SettingsService.instance.ttsSpeechRate,
+      );
+    } catch (e) {
+      debugPrint('SplashScreen: applying speech rate failed: $e');
+    }
     // Fully ready the offline Bengali STT (model was pre-warmed in main()).
     await SpeechService.instance.initialize();
     _update('প্রস্তুত!', 1.0);
