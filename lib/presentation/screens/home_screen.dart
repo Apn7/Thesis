@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
 // import '../../services/ble_service.dart'; // Pi BLE — disabled
+import '../../services/cane_foreground_service.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
 import '../../services/sensor_fusion_service.dart';
@@ -94,10 +95,20 @@ class _HomeScreenState extends State<HomeScreen>
     if (AppConstants.enableSensorFusion) {
       SensorFusionService.instance.start();
     }
+    // Screen-off shield: a foreground service (+ wake/WiFi locks) so the TCP
+    // servers, inference and alerts keep running with the phone pocketed —
+    // otherwise Android freezes the process minutes after the screen locks
+    // and the alerts die silently while the user keeps walking.
+    if (AppConstants.enableSensorFusion || AppConstants.enablePiDistance) {
+      CaneForegroundService.start();
+    }
   }
 
   @override
   void dispose() {
+    if (AppConstants.enableSensorFusion || AppConstants.enablePiDistance) {
+      CaneForegroundService.stop();
+    }
     if (AppConstants.enableSensorFusion) {
       SensorFusionService.instance.stop();
     }

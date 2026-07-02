@@ -20,7 +20,21 @@
     <!-- Internet permission for API calls (geocoding, Groq AI) -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    
+
+    <!-- Foreground service keeping the cane link (TCP frame/sonar servers,
+         YOLO inference, obstacle alerts) alive while the phone is pocketed
+         with the screen off. Type connectedDevice: the cane is a connected
+         device streaming over the phone's hotspot. CHANGE_WIFI_STATE is the
+         install-time prerequisite for that type (and is needed anyway for the
+         planned LocalOnlyHotspot provisioning, Step 2). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 13+ runtime permission for the service's status notification -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
     <!-- Bluetooth BLE permissions for Smart Cane communication -->
     <!-- Legacy permissions required for Android 11 (API 30) and below -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -62,6 +76,14 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+
+        <!-- Keeps the cane pipeline (TCP servers + inference + alerts) running
+             while the screen is off. Started/stopped from Dart alongside the
+             fusion/distance services; holds no logic of its own. -->
+        <service
+            android:name=".CaneForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

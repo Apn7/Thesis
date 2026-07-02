@@ -30,6 +30,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "com.example.test_app_1/llm"
         private const val KEYS_CHANNEL = "com.example.test_app_1/hardware_keys"
         private const val SMS_CHANNEL = "com.example.test_app_1/sms"
+        private const val FGS_CHANNEL = "com.example.test_app_1/foreground_service"
     }
 
     // Channel used to forward consumed hardware-key events (volume up) to Dart.
@@ -110,6 +111,33 @@ class MainActivity : FlutterActivity() {
                             result.success(sent)
                         } catch (e: Exception) {
                             result.error("SEND_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Foreground service: keeps the cane link (TCP servers + YOLO + alerts)
+        // alive while the phone is pocketed with the screen off. The Dart side
+        // starts it when the fusion/distance pipeline starts and stops it when
+        // that pipeline stops — the service holds no logic of its own.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FGS_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "start" -> {
+                        try {
+                            CaneForegroundService.start(this)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("FGS_START_FAILED", e.message, null)
+                        }
+                    }
+                    "stop" -> {
+                        try {
+                            CaneForegroundService.stop(this)
+                            result.success(true)
+                        } catch (e: Exception) {
+                            result.error("FGS_STOP_FAILED", e.message, null)
                         }
                     }
                     else -> result.notImplemented()
