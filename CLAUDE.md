@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Accessibility-first Flutter companion app for the Smart Cane — assistive navigation for visually impaired users in Bangladesh. Bilingual Bangla/English voice UI, push-to-talk voice commands (STT → cloud LLM intent → TTS), **on-device YOLOv11n vision**, BLE distance alerts from the cane, and GPS. Targets **Android + Windows** (iOS/Linux/macOS folders exist but are not actively developed).
+Accessibility-first Flutter companion app for the Smart Cane — assistive navigation for visually impaired users in Bangladesh. Bengali-only voice UI with hands-free voice commands (offline STT → intent matching or cloud LLM → TTS), **on-device YOLOv11n vision**, BLE distance alerts from the cane, GPS, and **zero-tap emergency SOS** (voice or button triggers countdown → auto-SMS all saved contacts with live location). Targets **Android + Windows** (iOS/Linux/macOS folders exist but are not actively developed).
 
 > This subdirectory is where nearly all work happens. The repo-root `../../CLAUDE.md` describes the wider system; `../../Thesis_pi_zero/PI_ZERO_VISION_PLAN.md` is the active feature plan (Pi Zero camera replacing the ESP32 — see "Active feature" below).
 
@@ -33,6 +33,8 @@ flutter build windows
 - `flutter analyze` passes with info-level deprecation warnings (`withOpacity`, `RadioListTile`, `speech_to_text` listen params). Expected.
 - `flutter test` fails in `test/widget_test.dart` because `flutter_blue_plus` is unsupported on the test host. Run focused single tests instead.
 - On Windows, `flutter_tts` was removed (CMake issues); `tts_service_stub.dart` logs instead of speaking.
+- **New assets require full rebuild:** Adding a file to `pubspec.yaml`'s `assets:` section only takes effect on `flutter run`, not hot reload/hot restart. If a new `.json` asset is not loading, do a full rebuild.
+- **Bengali nukta Unicode mismatch:** Sherpa-onnx STT emits Bengali nukta letters (ড়/ঢ়/য়) as precomposed single codepoints (U+09DC/09DD/09DF), but human-typed text typically uses decomposed forms (base consonant + U+09BC nukta). They render identically but fail string equality. Fixed in `IntentMatcher._normalize()` with `_canonicalizeNukta()`, which collapses both to precomposed before every similarity comparison — protects all intents globally, not just one phrase. Do the same for any new Bengali intent phrases or vocabulary lists.
 
 ## Architecture
 
@@ -42,10 +44,10 @@ Three layers: `lib/core/` (config, theme, routing, accessibility utils, constant
 
 **1. Voice pipeline** (push-to-talk: hold a volume key to talk)
 1. `HardwareKeyService` — forwards Android volume-key down/up over a `MethodChannel` (`MainActivity.kt` consumes the keys so system volume doesn't change); wired once in `main.dart` as push-to-talk start/stop.
-2. `SpeechService` — STT orchestrator. **Both `bn` and `en` currently route through the `speech_to_text` (platform/Google built-in) recognizer** (`bn-BD` / `en_US`). The offline sherpa-onnx Zipformer path in `lib/services/stt/` is **disabled** but kept commented for re-enable (`sherpa.initBindings()` in `main.dart` is also commented out).
-3. `IntentMatcher` — offline hybrid fuzzy/code-mixing intent classifier; resolves common commands locally. Below its confidence threshold it falls back to the cloud LLM. `VoiceNavigationService.lastWasLocal` tracks which path handled the command.
+2. `SpeechService` — STT orchestrator using offline Bengali sherpa-onnx Zipformer (bundled; `assets/models/sherpa-onnx-streaming-zipformer-bn-vosk-2026-02-09`). The `speech_to_text` platform recognizer is **intentionally not used** — the app is Bengali-only for blind Bangladeshi users.
+3. `IntentMatcher` — offline hybrid ensemble intent classifier (Damerau–Levenshtein + Jaro–Winkler + Sørensen–Dice bigram + TF-IDF + Jaccard token). Resolves common commands locally from `assets/intents/intents.json` (global nav/utility commands). Below τ=0.70 confidence it falls through to the cloud LLM. **Unicode fix:** canonicalizes Bengali nukta letters (ড়/ঢ়/য়) from precomposed ↔ decomposed forms in `_normalize()` so STT output doesn't silently miss exact phrases.
 4. `GroqService` — cloud LLaMA 3.3 70B via Groq API; returns `{"action": "...", "spoken_response": "..."}`; keeps ≤10 messages of history. **This is the active LLM.**
-5. `VoiceNavigationService` — orchestrates the above and exposes `onNavigationAction` for routing; speaks results via `TtsService`.
+5. `VoiceNavigationService` — orchestrates the above; exposes `onNavigationAction` callback for routing and optional `transcriptInterceptor` for screen-scoped handlers (see SOS feature below). Speaks results via `TtsService`. Implements turn-epoch barge-in model — PTT press aborts the old turn and starts a new one atomically.
 - `LlmService` (on-device Gemma 4 E2B via LiteRT-LM Kotlin channel) is **intentionally disabled** — see the header comment in `llm_service.dart` for the exact re-enable steps. Note `AppConstants.enableLlm = true` means "route voice commands through the cloud `GroqService`," not Gemma.
 
 **2. On-device vision** (`vision_demo_screen.dart`)
@@ -56,6 +58,14 @@ Three layers: `lib/core/` (config, theme, routing, accessibility utils, constant
 - **ESP32 (active, `enableEspBle = true`):** `EspBleService` connects to `SmartCane_ESP`, reads a raw ultrasonic distance, and **the app** classifies it into CRITICAL/WARNING/CAUTION using cm thresholds (`espCriticalCm` 50 / `espWarningCm` 100 / `espCautionCm` 200). UUIDs `a1b2c3d4-...`. Auto-reconnects after 3s.
 - **Legacy Pi (off, `enablePiBle = false`):** `BleService` parses old `"LEVEL:OBJECT:CONFIDENCE:POSITION"` strings (UUIDs `12345678-...`). The Pi backend that produced them is gone; parser/UUIDs remain dormant.
 - When touching BLE, confirm which path/UUIDs you mean — they differ in UUIDs and message semantics.
+
+**4. Emergency SOS** — zero-tap, hands-free alert workflow.
+- **SOS screen** (`lib/presentation/screens/sos_screen.dart`) — 4-phase FSM (`idle → countdown → sending → done`). Big red button + voice command starts a **cancelable countdown** (user hears each second), then sends direct SMS with live GPS location to all saved emergency contacts at once.
+- **Contact management** (`lib/services/sos_dialog_controller.dart`) — screen-scoped voice dialog FSM (`idle → askName → askNumber → confirm`) for managing contacts entirely hands-free. Uses `IntentMatcher.scoped('assets/intents/sos_intents.json')` — a **separate, private matcher** loaded only on the SOS screen that owns `add_contact`/`read_contacts`/`confirm_yes`/`confirm_no`/`cancel` intents. Prevents "হ্যাঁ" or "বাতিল" said anywhere else in the app from being intercepted by this dialog.
+- **Transcript interceptor** — the SOS screen owns `VoiceNavigationService.transcriptInterceptor` while mounted; every transcript is offered to the dialog first (returns `true` if consumed, `false` to fall through to global pipeline). Defensively cleared on dispose.
+- **Spoken-number parser** (`lib/services/spoken_number_parser.dart`) — static utility that maps Bengali digit words ("শূন্য এক সাত…") and Bengali numeral characters (০১৭…) to ASCII phone-number strings, ignoring filler words. Output is read back digit-by-digit in Bengali for confirmation before saving. Handles both forms of each digit (e.g. "পাঁচ" and "পাচ" → `5`).
+- **Intent split:** `assets/intents/intents.json` (global navigation) vs `assets/intents/sos_intents.json` (dialog-only control words). The global matcher never sees the SOS action list; the scoped matcher never loads the navigation-command phrases. This isolation is **critical** — control words must not leak into the global pipeline or spoken "yes"/"no" elsewhere in the app becomes ambiguous.
+- **Voice commands:** Say "জরুরি"/"বাঁচাও"/"ইমার্জেন্সি" (and 20+ variants) to trigger SOS with auto-countdown. Say "জরুরি যোগাযোগ" to open the page for managing contacts (no auto-countdown). On the SOS screen itself, say "যোগাযোগ যোগ করো" (add), "যোগাযোগ পড়ো" (read), "হ্যাঁ"/"না" (confirm), "বাতিল" (cancel).
 
 ### Other services
 - `LocationService` — GPS via `geolocator` + reverse geocoding via OpenStreetMap Nominatim (no API key).
@@ -75,3 +85,5 @@ Replacing the ESP32 cane hardware with a **Raspberry Pi Zero 2 W + Arducam IMX51
 - **Error handling:** wrap every plugin/BLE/HTTP/speech/TTS call in `try/catch`; log with `debugPrint`; surface errors via state/dialog/`SnackBar`.
 - **`ChangeNotifier`:** update internal state *before* `notifyListeners()`. Check `mounted` after every `await` before `setState`, dialogs, or `ScaffoldMessenger`.
 - **Secrets:** Groq key from `.env`; never log it. Prefer `--dart-define` for any new secret. When changing BLE UUIDs or the alert format, mirror the change on both producer (firmware) and consumer (`constants.dart` / the relevant `*BleService`).
+- **Screen-scoped voice dialogs:** Use `IntentMatcher.scoped(assetPath)` for a screen-local vocabulary (never the global `.instance`). Control words like "yes"/"no"/"cancel" must be isolated from the global pipeline. Set `VoiceNavigationService.transcriptInterceptor` in `initState`, clear it defensively in `dispose`. The pattern is lock-free and thread-safe due to turn-epoch barge-in.
+- **Bengali nukta Unicode:** Sherpa STT emits nukta letters (ড়/ঢ়/য়) as precomposed single codepoints; typed text uses decomposed forms. Both render identically but fail string equality. Canonicalise in any new intent matcher or phrase-matching code — see `IntentMatcher._canonicalizeNukta()` for the pattern.

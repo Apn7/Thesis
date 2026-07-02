@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../core/utils/constants.dart';
+import 'gemini_service.dart';
 import 'groq_service.dart';
 import 'intent_matcher.dart';
 // import 'llm_service.dart'; // on-device Gemma — disabled, see llm_service.dart
@@ -61,6 +62,7 @@ class VoiceNavigationService extends ChangeNotifier {
   static VoiceNavigationService? _instance;
 
   final GroqService _groq = GroqService.instance;
+  final GeminiService _gemini = GeminiService.instance;
   final IntentMatcher _matcher = IntentMatcher.instance;
   final SpeechService _speech = SpeechService.instance;
   final TtsService _tts = TtsService.instance;
@@ -298,25 +300,11 @@ class VoiceNavigationService extends ChangeNotifier {
           reply: response.spokenResponse,
         );
       } else if (AppConstants.enableLlm && await _hasInternet()) {
-        // Tier 2 — cloud LLM fallback, only when the host is actually
-        // reachable so we never block an offline user on a socket timeout.
+        // Tier 2 — cloud LLM fallback (Groq → Gemini), only when the host is
+        // actually reachable so we never block an offline user on a socket
+        // timeout.
         _lastWasLocal = false;
-        final sw = Stopwatch()..start();
-        _logCloudRequest();
-        // Belt-and-suspenders timeout on top of GroqService's own.
-        response = await _groq
-            .processCommand(text)
-            .timeout(
-              const Duration(seconds: 10),
-              onTimeout: () =>
-                  VoiceCommandResponse.error('সার্ভারে সংযোগ করা যায়নি।'),
-            );
-        sw.stop();
-        _logCloudResponse(
-          action: response.action,
-          reply: response.spokenResponse,
-          elapsedMs: sw.elapsedMilliseconds,
-        );
+        response = await _tryCloudLlm(text);
       } else {
         // Tier 3 — local-only fallback: the LLM is disabled, or we're offline.
         // Answer immediately (no network wait); the no-action branch below
@@ -393,6 +381,78 @@ class VoiceNavigationService extends ChangeNotifier {
         _setState(VoiceState.idle);
       }
     }
+  }
+
+  /// Two-tier cloud LLM: tries Groq first (fast LPU), silently falls back to
+  /// Gemini if Groq fails or its response indicates an error.
+  ///
+  /// The fallback is transparent to the user — they only hear the final
+  /// spoken response regardless of which provider delivered it.
+  Future<VoiceCommandResponse> _tryCloudLlm(String text) async {
+    // ── Tier 2a: Groq (primary) ──────────────────────────────────────────
+    final groqSw = Stopwatch()..start();
+    _logGroqRequest();
+    VoiceCommandResponse groqResponse;
+    try {
+      groqResponse = await _groq
+          .processCommand(text)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () =>
+                VoiceCommandResponse.error('সার্ভারে সংযোগ করা যায়নি।'),
+          );
+    } catch (e) {
+      debugPrint('[GROQ] !! exception: $e');
+      groqResponse = VoiceCommandResponse.error('Groq error: $e');
+    }
+    groqSw.stop();
+
+    // A valid Groq response has action != 'none' OR a non-error spoken reply.
+    // We treat a response as "failed" only when it carries the specific error
+    // strings emitted by GroqService.error() — meaning a network/API failure,
+    // not a legitimate "none" action from the model.
+    final groqFailed = groqResponse.action == 'none' &&
+        (groqResponse.spokenResponse.contains('সংযোগ') ||
+            groqResponse.spokenResponse.contains('error') ||
+            groqResponse.spokenResponse.contains('Error'));
+
+    if (!groqFailed) {
+      _logCloudResponse(
+        provider: 'GROQ',
+        action: groqResponse.action,
+        reply: groqResponse.spokenResponse,
+        elapsedMs: groqSw.elapsedMilliseconds,
+      );
+      return groqResponse;
+    }
+
+    // ── Tier 2b: Gemini (fallback) ────────────────────────────────────────
+    debugPrint(
+      '[GROQ] failed (${groqSw.elapsedMilliseconds}ms) — escalating to Gemini',
+    );
+    _logGeminiRequest();
+    final geminiSw = Stopwatch()..start();
+    VoiceCommandResponse geminiResponse;
+    try {
+      geminiResponse = await _gemini
+          .processCommand(text)
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () =>
+                VoiceCommandResponse.error('Gemini timeout'),
+          );
+    } catch (e) {
+      debugPrint('[GEMINI] !! exception: $e');
+      geminiResponse = VoiceCommandResponse.error('দুঃখিত, বুঝতে পারিনি।');
+    }
+    geminiSw.stop();
+    _logCloudResponse(
+      provider: 'GEMINI',
+      action: geminiResponse.action,
+      reply: geminiResponse.spokenResponse,
+      elapsedMs: geminiSw.elapsedMilliseconds,
+    );
+    return geminiResponse;
   }
 
   /// Fast reachability probe for the cloud LLM host. A DNS lookup bounded by a
@@ -480,23 +540,33 @@ class VoiceNavigationService extends ChangeNotifier {
     debugPrint('  latency  : ${diag.latencyMicros}µs');
   }
 
-  void _logCloudRequest() {
+  void _logGroqRequest() {
     debugPrint(_logSubRule);
-    debugPrint('[CLOUD] >>> escalating to Groq LLM (network call)');
+    debugPrint('[GROQ] >>> sending to Groq LLM (primary cloud)');
     debugPrint('  reason   : local confidence below threshold');
     debugPrint('  endpoint : api.groq.com  (LLaMA 3.3 70B)');
   }
 
+  void _logGeminiRequest() {
+    debugPrint(_logSubRule);
+    debugPrint('[GEMINI] >>> escalating to Gemini (fallback cloud)');
+    debugPrint('  reason   : Groq failed or timed out');
+    debugPrint(
+      '  endpoint : generativelanguage.googleapis.com  (Gemini 2.5 Flash)',
+    );
+  }
+
   void _logCloudResponse({
+    required String provider,
     required String action,
     required String reply,
     required int elapsedMs,
   }) {
-    debugPrint('[CLOUD] <<< response received');
+    debugPrint('[$provider] <<< response received');
     debugPrint('  action   : $action');
     debugPrint('  reply    : "$reply"');
     debugPrint('  latency  : ${elapsedMs}ms');
-    debugPrint('>> RESOLVED via CLOUD  (API call made)');
+    debugPrint('>> RESOLVED via $provider  (API call made)');
   }
 
   void _logResolution({
