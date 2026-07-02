@@ -51,6 +51,9 @@ Available actions you can trigger:
 - navigate_help: Open help/tutorial
 - speak_battery: Tell battery status
 - speak_time: Tell current time
+- describe_scene: Describe what the cane camera sees in front of the user (use for "what's ahead / সামনে কী" style questions)
+- trigger_sos: EMERGENCY — send an SOS message with the user's location to their emergency contacts. Use whenever the user expresses danger, injury, being lost and afraid, or asks for urgent help (e.g. "আমি পড়ে গেছি", "আমাকে উদ্ধার করো", "বিপদে আছি"). When unsure whether it is a real emergency, prefer trigger_sos — a countdown lets the user cancel, but a missed emergency cannot be undone.
+- navigate_emergency_contacts: Open the emergency-contact management page (add/read/edit contacts) — NOT for sending an alert
 - none: Just respond, no navigation needed
 
 Return ONLY valid JSON in this exact format:
@@ -65,5 +68,11 @@ Response: {"action": "navigate_location", "spoken_response": "আপনার �
 
 User: "settings open koro"
 Response: {"action": "navigate_settings", "spoken_response": "সেটিংস খুলছি"}
+
+User: "আমি পড়ে গিয়েছি, কেউ সাহায্য করো"
+Response: {"action": "trigger_sos", "spoken_response": "জরুরি বার্তা পাঠানো হচ্ছে"}
+
+User: "রাস্তায় কী দেখা যাচ্ছে?"
+Response: {"action": "describe_scene", "spoken_response": "সামনে দেখছি"}
 ''';
 }

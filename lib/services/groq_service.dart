@@ -43,11 +43,14 @@ class GroqService {
   /// Process a transcribed voice command and return the action + spoken reply.
   Future<VoiceCommandResponse> processCommand(String userText) async {
     try {
-      _conversationHistory.add({'role': 'user', 'content': userText});
-
+      // Build the request from history + the new utterance, but only commit
+      // the exchange to history after a successful reply. Committing eagerly
+      // left an orphan user message behind on every failure, and the pairwise
+      // trim below then desynced the whole rolling window.
       final messages = [
         {'role': 'system', 'content': ApiConfig.systemPrompt},
         ..._conversationHistory,
+        {'role': 'user', 'content': userText},
       ];
 
       // Hard timeout so a flaky/half-open connection can never leave the user
@@ -79,7 +82,9 @@ class GroqService {
       final data = jsonDecode(utf8.decode(response.bodyBytes));
       final content = data['choices'][0]['message']['content'] as String;
 
-      _conversationHistory.add({'role': 'assistant', 'content': content});
+      _conversationHistory
+        ..add({'role': 'user', 'content': userText})
+        ..add({'role': 'assistant', 'content': content});
       if (_conversationHistory.length > 10) {
         _conversationHistory.removeRange(0, 2);
       }

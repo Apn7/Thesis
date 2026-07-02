@@ -232,10 +232,14 @@ class VoiceNavigationService extends ChangeNotifier {
 
     if (trimmed.isEmpty) {
       // Nothing recognised (silence, a too-short press, or an STT error). Never
-      // hang — return to idle and give one short retry cue.
+      // hang — return to idle and give one short retry cue. Both are gated on
+      // the turn: a stale empty final from a superseded session must not speak
+      // over (and get captured by) the live listening turn.
       debugPrint('[STT] final transcript empty — prompting retry');
-      if (turn == _turn) _setState(VoiceState.idle);
-      VoiceAnnouncer.announce('শুনতে পাইনি, আবার বলুন।');
+      if (turn == _turn) {
+        _setState(VoiceState.idle);
+        VoiceAnnouncer.announce('শুনতে পাইনি, আবার বলুন।');
+      }
       return;
     }
 

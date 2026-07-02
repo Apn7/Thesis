@@ -3,6 +3,7 @@ package com.example.test_app_1
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.os.BatteryManager
 import android.os.Build
 import android.telephony.SmsManager
 import android.view.KeyEvent
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
         private const val KEYS_CHANNEL = "com.example.test_app_1/hardware_keys"
         private const val SMS_CHANNEL = "com.example.test_app_1/sms"
         private const val FGS_CHANNEL = "com.example.test_app_1/foreground_service"
+        private const val SYSTEM_CHANNEL = "com.example.test_app_1/system"
     }
 
     // Channel used to forward consumed hardware-key events (volume up) to Dart.
@@ -138,6 +140,28 @@ class MainActivity : FlutterActivity() {
                             result.success(true)
                         } catch (e: Exception) {
                             result.error("FGS_STOP_FAILED", e.message, null)
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // System info: the phone's real battery level, spoken by the voice
+        // assistant. BatteryManager needs no permission.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SYSTEM_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "getBatteryLevel" -> {
+                        try {
+                            val bm = getSystemService(Context.BATTERY_SERVICE)
+                                as BatteryManager
+                            result.success(
+                                bm.getIntProperty(
+                                    BatteryManager.BATTERY_PROPERTY_CAPACITY,
+                                ),
+                            )
+                        } catch (e: Exception) {
+                            result.error("BATTERY_FAILED", e.message, null)
                         }
                     }
                     else -> result.notImplemented()

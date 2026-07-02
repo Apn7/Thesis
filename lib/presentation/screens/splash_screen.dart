@@ -84,12 +84,30 @@ class _SplashScreenState extends State<SplashScreen>
 
   /// Request all dangerous permissions at first launch so blind users never
   /// need to navigate to system Settings manually.
+  ///
+  /// One batch, one moment: Android persists a grant across launches, so a
+  /// user who allows everything here is never interrupted by a permission
+  /// dialog again (exceptions: choosing "only this time", revoking in
+  /// Settings, or the OS auto-resetting an app unused for months). Every
+  /// per-feature request elsewhere in the app remains as an idempotent
+  /// fallback — already-granted permissions resolve silently, no dialog.
   Future<void> _requestPermissions() async {
     final required = <Permission>[
-      Permission.bluetoothScan,
-      Permission.bluetoothConnect,
+      // Bluetooth only when a BLE cane path is actually enabled — asking for
+      // permissions the build doesn't use is noise for a blind user (and a
+      // Play-review flag).
+      if (AppConstants.enableEspBle || AppConstants.enablePiBle) ...[
+        Permission.bluetoothScan,
+        Permission.bluetoothConnect,
+      ],
       Permission.locationWhenInUse,
       Permission.microphone,
+      // Camera for the vision screens — asked here instead of mid-navigation.
+      Permission.camera,
+      // Android 13+ notification permission for the cane foreground service's
+      // status notification (auto-granted below 13).
+      if (AppConstants.enableSensorFusion || AppConstants.enablePiDistance)
+        Permission.notification,
       // SMS up front so the emergency SOS never stops to ask for permission
       // mid-crisis — the one moment a dialog is least acceptable.
       if (AppConstants.enableSos) Permission.sms,

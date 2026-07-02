@@ -46,6 +46,73 @@
       "response": "যোগাযোগ পড়ছি"
     },
     {
+      "action": "delete_contact",
+      "phrases": [
+        "যোগাযোগ মুছো",
+        "যোগাযোগ মুছে ফেলো",
+        "যোগাযোগ মুছে দাও",
+        "একজনকে মুছো",
+        "কন্টাক্ট মুছো",
+        "কন্টাক্ট ডিলিট করো",
+        "নম্বর মুছো",
+        "নম্বর মুছে ফেলো",
+        "মুছে ফেলো",
+        "ডিলিট করো",
+        "delete contact",
+        "remove contact",
+        "delete a contact",
+        "remove a number",
+        "jogajog mucho",
+        "contact mucho",
+        "contact delete koro",
+        "number mucho"
+      ],
+      "response": "যোগাযোগ মুছছি"
+    },
+    {
+      "action": "edit_contact",
+      "phrases": [
+        "যোগাযোগ বদলাও",
+        "যোগাযোগ পরিবর্তন করো",
+        "যোগাযোগ ঠিক করো",
+        "নম্বর বদলাও",
+        "নম্বর পরিবর্তন করো",
+        "নম্বর ঠিক করো",
+        "কন্টাক্ট বদলাও",
+        "কন্টাক্ট এডিট করো",
+        "এডিট করো",
+        "edit contact",
+        "change contact",
+        "change number",
+        "edit number",
+        "update contact",
+        "jogajog bodlao",
+        "number bodlao",
+        "contact edit koro"
+      ],
+      "response": "যোগাযোগ বদলাচ্ছি"
+    },
+    {
+      "action": "send_single",
+      "phrases": [
+        "একজনকে পাঠাও",
+        "একজনকে বার্তা পাঠাও",
+        "শুধু একজনকে পাঠাও",
+        "একজনকে জরুরি বার্তা পাঠাও",
+        "একজনকে এসওএস পাঠাও",
+        "নির্দিষ্ট একজনকে পাঠাও",
+        "একজনকে মেসেজ পাঠাও",
+        "send to one",
+        "send to one contact",
+        "send sos to one",
+        "message one contact",
+        "ekjonke pathao",
+        "ekjonke barta pathao",
+        "shudhu ekjonke pathao"
+      ],
+      "response": "একজনকে পাঠাচ্ছি"
+    },
+    {
       "action": "confirm_yes",
       "phrases": [
         "হ্যাঁ",

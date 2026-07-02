@@ -53,7 +53,7 @@ class FusionDebugCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _header(context, fusion),
-                const Divider(height: 16),
+                Divider(height: 16, color: AppColors.primary.withValues(alpha: 0.15)),
                 bayes ? _metricsRowV2(context, fusion) : _metricsRow(fusion),
                 SizedBox(height: AppConstants.spacingS),
                 _distanceRow(context, distCm, verdict),
@@ -64,7 +64,7 @@ class FusionDebugCard extends StatelessWidget {
                   _confirmedZones(context, fusion, distCm),
                 SizedBox(height: AppConstants.spacingS),
                 _lastAnnouncement(context, fusion),
-                const Divider(height: 16),
+                Divider(height: 16, color: AppColors.primary.withValues(alpha: 0.15)),
                 _rawDetections(context, dets),
               ],
             ),
@@ -165,67 +165,87 @@ class FusionDebugCard extends StatelessWidget {
       'U ${utility.toStringAsFixed(2)}',
     ];
 
+    final tierColor = _tierColor(t.tier);
+
     return Container(
       margin: EdgeInsets.only(bottom: AppConstants.spacingXs),
-      padding: EdgeInsets.symmetric(
-        horizontal: AppConstants.spacingS,
-        vertical: AppConstants.spacingXs,
-      ),
       decoration: BoxDecoration(
         color: picked
-            ? AppColors.accent.withValues(alpha: 0.14)
-            : AppColors.primaryLight.withValues(alpha: 0.12),
+            ? AppColors.accent.withValues(alpha: 0.08)
+            : AppColors.primaryLight.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(AppConstants.radiusS),
-        border: picked
-            ? Border.all(color: AppColors.accent.withValues(alpha: 0.6))
-            : null,
+        border: Border.all(
+          color: picked
+              ? AppColors.accent.withValues(alpha: 0.4)
+              : AppColors.primary.withValues(alpha: 0.15),
+          width: 1,
+        ),
       ),
-      child: Opacity(
-        // Lingering (not-this-frame) tracks are memory only — dim them.
-        opacity: live ? 1.0 : 0.55,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                _zoneTag(t.zone),
-                SizedBox(width: AppConstants.spacingS),
-                _tierChip(t.tier),
-                SizedBox(width: AppConstants.spacingS),
-                Expanded(
-                  child: Text(
-                    name,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppConstants.radiusS - 1),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left tier color indicator strip
+              Container(
+                width: 4,
+                color: tierColor,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: AppConstants.spacingS,
+                    vertical: AppConstants.spacingXs,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _zoneTag(t.zone),
+                          SizedBox(width: AppConstants.spacingS),
+                          _tierChip(t.tier),
+                          SizedBox(width: AppConstants.spacingS),
+                          Expanded(
+                            child: Text(
+                              name,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (picked)
+                            Icon(
+                              Icons.volume_up,
+                              size: AppConstants.iconS,
+                              color: AppColors.accentDark,
+                            )
+                          else if (!live)
+                            Text(
+                              'mem',
+                              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: AppConstants.spacingXs / 2),
+                      _existenceBar(t.existence, t.tier),
+                      SizedBox(height: AppConstants.spacingXs / 2),
+                      Text(
+                        facts.join('  ·  '),
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
                   ),
                 ),
-                if (picked)
-                  Icon(
-                    Icons.volume_up,
-                    size: AppConstants.iconS,
-                    color: AppColors.accentDark,
-                  )
-                else if (!live)
-                  Text(
-                    'mem',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-              ],
-            ),
-            SizedBox(height: AppConstants.spacingXs / 2),
-            _existenceBar(t.existence, t.tier),
-            SizedBox(height: AppConstants.spacingXs / 2),
-            Text(
-              facts.join('  ·  '),
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -385,24 +405,51 @@ class FusionDebugCard extends StatelessWidget {
     final text = fusion.lastAnnouncement.isEmpty
         ? '—'
         : fusion.lastAnnouncement;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          Icons.volume_up,
-          size: AppConstants.iconS,
-          color: AppColors.accent,
+    return Container(
+      padding: EdgeInsets.all(AppConstants.spacingS),
+      decoration: BoxDecoration(
+        color: AppColors.accent.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AppConstants.radiusS),
+        border: Border.all(
+          color: AppColors.accent.withValues(alpha: 0.25),
+          width: 1,
         ),
-        SizedBox(width: AppConstants.spacingS),
-        Expanded(
-          child: Text(
-            text,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.volume_up,
+            size: AppConstants.iconS,
+            color: AppColors.accentDark,
           ),
-        ),
-      ],
+          SizedBox(width: AppConstants.spacingS),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Last Spoken Announcement',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: AppColors.accentDark,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                SizedBox(height: AppConstants.spacingXs / 2),
+                Text(
+                  text,
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -411,7 +458,7 @@ class FusionDebugCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'কাঁচা সনাক্তকরণ (${dets.length})',
+          'Raw Detections (${dets.length})',
           style: Theme.of(
             context,
           ).textTheme.labelSmall?.copyWith(color: AppColors.textSecondary),
@@ -419,7 +466,7 @@ class FusionDebugCard extends StatelessWidget {
         SizedBox(height: AppConstants.spacingXs),
         if (dets.isEmpty)
           Text(
-            'none',
+            'No detections',
             style: Theme.of(
               context,
             ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -520,13 +567,17 @@ class FusionDebugCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: color,
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: color.withValues(alpha: 0.3),
+          width: 1,
+        ),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: color,
           fontSize: 10,
           fontWeight: FontWeight.bold,
           letterSpacing: 0.8,

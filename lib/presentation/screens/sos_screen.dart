@@ -10,6 +10,7 @@ import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/sos_dialog_controller.dart';
 import '../../services/sos_service.dart';
+import '../../services/spoken_number_parser.dart';
 import '../../services/voice_navigation_service.dart';
 
 /// Phase of the SOS flow. Models the whole screen as one explicit state machine
@@ -44,6 +45,10 @@ class _SosScreenState extends State<SosScreen> {
   bool _resultOk = false;
   bool _autoStartHandled = false;
 
+  /// When set, the countdown/dispatch targets only this contact (voice
+  /// "একজনকে পাঠাও" or the per-contact button); null = alert everyone.
+  EmergencyContact? _target;
+
   List<EmergencyContact> get _contacts => _settings.sosContacts;
 
   @override
@@ -51,10 +56,12 @@ class _SosScreenState extends State<SosScreen> {
     super.initState();
     _settings.addListener(_onSettingsChanged);
     _dialog.addListener(_onSettingsChanged);
-    // Take over the voice pipeline while this screen is mounted: the contact
-    // dialog gets first crack at every transcript; anything it doesn't own
-    // falls through to the normal global command handling.
-    _voice.transcriptInterceptor = _dialog.handleTranscript;
+    _dialog.onSendToContact = (contact) => _startCountdown(target: contact);
+    // Take over the voice pipeline while this screen is mounted: a spoken
+    // "বাতিল" cancels a running countdown first (the moment voice cancel
+    // matters most), then the contact dialog gets first crack; anything it
+    // doesn't own falls through to the normal global command handling.
+    _voice.transcriptInterceptor = _handleTranscript;
     // Own the audio channel too: the SOS countdown and the contact dialog
     // must never be interleaved with fusion's obstacle callouts (TTS
     // interrupts — a scene callout would swallow a countdown number). The
@@ -79,7 +86,7 @@ class _SosScreenState extends State<SosScreen> {
     _dialog.removeListener(_onSettingsChanged);
     // Only relinquish the pipeline if it's still ours (defensive against
     // overlapping screens stomping each other's handler).
-    if (_voice.transcriptInterceptor == _dialog.handleTranscript) {
+    if (_voice.transcriptInterceptor == _handleTranscript) {
       _voice.transcriptInterceptor = null;
     }
     SensorFusionService.instance.uiAudioHold = false;
@@ -91,9 +98,21 @@ class _SosScreenState extends State<SosScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Screen-scoped transcript handler. A spoken cancel word during the
+  /// countdown aborts the alert (voice must work where hands can't find the
+  /// screen); everything else goes to the contact dialog, then falls through
+  /// to the global pipeline.
+  Future<bool> _handleTranscript(String text) async {
+    if (_phase == _SosPhase.countdown && await _dialog.isCancelPhrase(text)) {
+      _cancel();
+      return true;
+    }
+    return _dialog.handleTranscript(text);
+  }
+
   // ── SOS flow ────────────────────────────────────────────────────────────
 
-  void _startCountdown() {
+  void _startCountdown({EmergencyContact? target}) {
     if (_contacts.isEmpty) {
       VoiceAnnouncer.announce(
         'কোনো জরুরি যোগাযোগ সংরক্ষণ করা নেই। প্রথমে একজন যোগ করুন।',
@@ -104,19 +123,36 @@ class _SosScreenState extends State<SosScreen> {
     setState(() {
       _phase = _SosPhase.countdown;
       _countdown = AppConstants.sosCountdownSeconds;
+      _target = target;
     });
-    VoiceAnnouncer.announce(
-      '$_countdown সেকেন্ডের মধ্যে জরুরি বার্তা পাঠানো হবে। '
-      'বাতিল করতে স্ক্রিনে চাপুন।',
+    _runCountdown(target);
+  }
+
+  /// Speak a short intro, *then* start ticking — a periodic timer started
+  /// alongside the intro would cut it off after one second, so the user never
+  /// heard how to cancel. Ticks are spoken as Bengali words (the bn-BD voice
+  /// reads bare ASCII digits unpredictably).
+  Future<void> _runCountdown(EmergencyContact? target) async {
+    await VoiceAnnouncer.announce(
+      target == null
+          ? 'জরুরি বার্তা যাচ্ছে। বাতিল করতে স্ক্রিনে চাপুন বা বাতিল বলুন।'
+          : '${target.name} কে জরুরি বার্তা যাচ্ছে। '
+                'বাতিল করতে স্ক্রিনে চাপুন বা বাতিল বলুন।',
     );
+    if (!mounted || _phase != _SosPhase.countdown) return;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) return;
       setState(() => _countdown--);
       if (_countdown <= 0) {
         timer.cancel();
         _dispatch();
-      } else {
-        VoiceAnnouncer.speak('$_countdown');
+      } else if (!_voice.isListening && !_voice.isProcessing) {
+        // Stay quiet while the user is speaking a command (e.g. "বাতিল") —
+        // a spoken tick would feed the open microphone and garble the
+        // transcript. The countdown itself keeps running either way.
+        VoiceAnnouncer.speak(
+          SpokenNumberParser.toBanglaReadback('$_countdown'),
+        );
       }
     });
   }
@@ -126,21 +162,26 @@ class _SosScreenState extends State<SosScreen> {
     setState(() {
       _phase = _SosPhase.idle;
       _countdown = AppConstants.sosCountdownSeconds;
+      _target = null;
     });
     VoiceAnnouncer.announce('জরুরি বার্তা বাতিল করা হয়েছে।');
   }
 
   Future<void> _dispatch() async {
+    final target = _target;
+    final recipients = target != null ? [target] : _contacts;
     setState(() => _phase = _SosPhase.sending);
     await VoiceAnnouncer.announce('অবস্থান নিয়ে বার্তা পাঠানো হচ্ছে।');
 
-    final result = await _sos.sendSos(_contacts);
+    final result = await _sos.sendSos(recipients);
     if (!mounted) return;
 
     final ok = result == SosResult.sent;
     final message = switch (result) {
       SosResult.sent =>
-        '${_contacts.length} জন জরুরি যোগাযোগে বার্তা পাঠানো হয়েছে।',
+        target != null
+            ? '${target.name} কে বার্তা পাঠানো হয়েছে।'
+            : '${recipients.length} জন জরুরি যোগাযোগে বার্তা পাঠানো হয়েছে।',
       SosResult.permissionDenied =>
         'এসএমএস পাঠানোর অনুমতি দেওয়া হয়নি। সেটিংসে অনুমতি দিন।',
       SosResult.noContacts => 'কোনো জরুরি যোগাযোগ নেই।',
@@ -161,6 +202,7 @@ class _SosScreenState extends State<SosScreen> {
       _phase = _SosPhase.idle;
       _resultMessage = '';
       _resultOk = false;
+      _target = null;
     });
   }
 
@@ -233,6 +275,119 @@ class _SosScreenState extends State<SosScreen> {
     await _settings.removeSosContactAt(index);
     if (!mounted) return;
     VoiceAnnouncer.announce('$name মুছে ফেলা হয়েছে।');
+  }
+
+  Future<void> _showEditContactDialog(int index) async {
+    final existing = _contacts[index];
+    final nameController = TextEditingController(text: existing.name);
+    final phoneController = TextEditingController(text: '+${existing.phone}');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('যোগাযোগ সম্পাদনা করুন'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'নাম'),
+              textCapitalization: TextCapitalization.words,
+            ),
+            SizedBox(height: AppConstants.spacingM),
+            TextField(
+              controller: phoneController,
+              decoration: const InputDecoration(labelText: 'মোবাইল নম্বর'),
+              keyboardType: TextInputType.phone,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('বাতিল'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('সংরক্ষণ'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+
+    final contact = EmergencyContact.fromInput(
+      name: nameController.text.isEmpty ? existing.name : nameController.text,
+      rawPhone: phoneController.text,
+    );
+    if (!contact.isValid) {
+      VoiceAnnouncer.announce('নম্বরটি সঠিক নয়। আবার চেষ্টা করুন।');
+      return;
+    }
+    final ok = await _settings.updateSosContactAt(index, contact);
+    if (!mounted) return;
+    VoiceAnnouncer.announce(
+      ok
+          ? '${contact.name} এর তথ্য বদলানো হয়েছে।'
+          : 'বদলানো যায়নি। নম্বরটি অন্য যোগাযোগে আগে থেকেই আছে।',
+    );
+  }
+
+  /// Accessible action sheet for one contact: send SOS to just them, edit,
+  /// or delete — big touch targets, fully TalkBack-labelled.
+  Future<void> _showContactActions(int index) async {
+    final contact = _contacts[index];
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: EdgeInsets.all(AppConstants.spacingM),
+              child: Semantics(
+                header: true,
+                child: Text(
+                  '${contact.name} — +${contact.phone}',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+            ListTile(
+              minTileHeight: AppConstants.minTouchTargetSize,
+              leading: const Icon(Icons.sos, color: AppColors.error),
+              title: const Text('শুধু এই জনকে জরুরি বার্তা পাঠান'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _startCountdown(target: contact);
+              },
+            ),
+            ListTile(
+              minTileHeight: AppConstants.minTouchTargetSize,
+              leading: const Icon(Icons.edit),
+              title: const Text('সম্পাদনা করুন'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _showEditContactDialog(index);
+              },
+            ),
+            ListTile(
+              minTileHeight: AppConstants.minTouchTargetSize,
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('মুছে ফেলুন'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _removeContact(index);
+              },
+            ),
+            SizedBox(height: AppConstants.spacingS),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── UI ────────────────────────────────────────────────────────────────────
@@ -429,12 +584,12 @@ class _SosScreenState extends State<SosScreen> {
           ),
         ),
         SizedBox(height: AppConstants.spacingL),
-        if (!_resultOk)
+        if (!_resultOk) ...[
           Semantics(
             button: true,
             label: 'আবার চেষ্টা করুন',
             child: FilledButton.icon(
-              onPressed: _startCountdown,
+              onPressed: () => _startCountdown(target: _target),
               icon: const Icon(Icons.refresh),
               label: const Text('আবার চেষ্টা করুন'),
               style: FilledButton.styleFrom(
@@ -442,19 +597,22 @@ class _SosScreenState extends State<SosScreen> {
                 padding: EdgeInsets.symmetric(vertical: AppConstants.spacingL),
               ),
             ),
-          )
-        else
-          Semantics(
-            button: true,
-            label: 'ঠিক আছে',
-            child: OutlinedButton(
-              onPressed: _reset,
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.symmetric(vertical: AppConstants.spacingL),
-              ),
-              child: const Text('ঠিক আছে'),
-            ),
           ),
+          SizedBox(height: AppConstants.spacingM),
+        ],
+        // Always offer a way back to idle — a failure screen with only a
+        // retry button would strand the user if the send keeps failing.
+        Semantics(
+          button: true,
+          label: 'ঠিক আছে',
+          child: OutlinedButton(
+            onPressed: _reset,
+            style: OutlinedButton.styleFrom(
+              padding: EdgeInsets.symmetric(vertical: AppConstants.spacingL),
+            ),
+            child: const Text('ঠিক আছে'),
+          ),
+        ),
       ],
     );
   }
@@ -472,6 +630,11 @@ class _SosScreenState extends State<SosScreen> {
       ContactDialogStage.confirm => (
         'সংরক্ষণ করবেন? "হ্যাঁ" বা "না" বলুন',
         '${_dialog.pendingName} — +${_dialog.pendingDigits}',
+      ),
+      ContactDialogStage.pickContact => ('কত নম্বর যোগাযোগ? সংখ্যা বলুন', ''),
+      ContactDialogStage.confirmDelete => (
+        'মুছে ফেলবেন? "হ্যাঁ" বা "না" বলুন',
+        _dialog.targetName,
       ),
       ContactDialogStage.idle => ('', ''),
     };
@@ -530,7 +693,8 @@ class _SosScreenState extends State<SosScreen> {
         ),
         SizedBox(height: AppConstants.spacingXs),
         Text(
-          'ভয়েসে বলতে পারেন: "যোগাযোগ যোগ করো" অথবা "যোগাযোগ পড়ো"।',
+          'ভয়েসে বলতে পারেন: "যোগাযোগ যোগ করো", "যোগাযোগ পড়ো", '
+          '"যোগাযোগ মুছো", "নম্বর বদলাও" অথবা "একজনকে পাঠাও"।',
           style: Theme.of(
             context,
           ).textTheme.bodySmall?.copyWith(color: AppColors.textSecondary),
@@ -551,24 +715,23 @@ class _SosScreenState extends State<SosScreen> {
             final i = entry.key;
             final c = entry.value;
             return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: AppColors.error,
-                  child: Text(
-                    '${i + 1}',
-                    style: const TextStyle(color: Colors.white),
+              child: Semantics(
+                button: true,
+                label: 'যোগাযোগ ${i + 1}: ${c.name}',
+                hint: 'চাপলে পাঠানো, সম্পাদনা ও মুছার অপশন খুলবে।',
+                child: ListTile(
+                  minTileHeight: AppConstants.minTouchTargetSize,
+                  onTap: () => _showContactActions(i),
+                  leading: CircleAvatar(
+                    backgroundColor: AppColors.error,
+                    child: Text(
+                      '${i + 1}',
+                      style: const TextStyle(color: Colors.white),
+                    ),
                   ),
-                ),
-                title: Text(c.name),
-                subtitle: Text('+${c.phone}'),
-                trailing: Semantics(
-                  button: true,
-                  label: '${c.name} মুছুন',
-                  child: IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    tooltip: 'মুছুন',
-                    onPressed: () => _removeContact(i),
-                  ),
+                  title: Text(c.name),
+                  subtitle: Text('+${c.phone}'),
+                  trailing: const Icon(Icons.more_vert),
                 ),
               ),
             );

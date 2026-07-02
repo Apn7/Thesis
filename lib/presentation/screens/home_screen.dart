@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:vibration/vibration.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/bangla_format.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
 // import '../../services/ble_service.dart'; // Pi BLE — disabled
 import '../../services/cane_foreground_service.dart';
+import '../../services/device_info_service.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
 import '../../services/sensor_fusion_service.dart';
@@ -372,6 +374,17 @@ class _HomeScreenState extends State<HomeScreen>
     await _voiceService.initialize();
   }
 
+  /// Speak the phone's real battery level in Bengali. An unreadable level is
+  /// admitted honestly — never a made-up number for a user who can't verify.
+  Future<void> _speakBatteryLevel() async {
+    final level = await DeviceInfoService.batteryLevel();
+    _voiceService.speak(
+      level == null
+          ? 'ব্যাটারির তথ্য পাওয়া যায়নি।'
+          : 'ব্যাটারি ${BanglaFormat.digits(level)} শতাংশ।',
+    );
+  }
+
   void _setupNavigationCallback() {
     _voiceService.onNavigationAction = (action) {
       switch (action) {
@@ -387,11 +400,12 @@ class _HomeScreenState extends State<HomeScreen>
           Navigator.pushNamed(context, AppRoutes.help);
           break;
         case VoiceAction.speakBattery:
-          _voiceService.speak('ব্যাটারি ৮৫ শতাংশ।');
+          _speakBatteryLevel();
           break;
         case VoiceAction.speakTime:
-          final now = TimeOfDay.now();
-          _voiceService.speak('এখন সময় ${now.format(context)}।');
+          _voiceService.speak(
+            'এখন ${BanglaFormat.spokenTime(TimeOfDay.now())}।',
+          );
           break;
         case VoiceAction.describeScene:
           // Handled in-place by VoiceNavigationService (speaks the fusion
@@ -1142,9 +1156,7 @@ class _HomeScreenState extends State<HomeScreen>
                             label: 'ব্যাটারি',
                             labelEn: 'ব্যাটারি',
                             semanticHint: 'ব্যাটারির অবস্থা।',
-                            onPressed: () {
-                              _voiceService.speak('ব্যাটারি ৮৫ শতাংশ।');
-                            },
+                            onPressed: _speakBatteryLevel,
                             color: AppColors.warning,
                           ),
                           AccessibleActionButton(

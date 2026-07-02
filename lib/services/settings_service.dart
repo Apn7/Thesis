@@ -60,6 +60,22 @@ class SettingsService extends ChangeNotifier {
     return true;
   }
 
+  /// Replace the contact at [index] with [contact]. Returns false (no change)
+  /// when the index is out of range or the new phone duplicates another
+  /// contact. Persists and notifies on success.
+  Future<bool> updateSosContactAt(int index, EmergencyContact contact) async {
+    if (index < 0 || index >= _sosContacts.length) return false;
+    for (var i = 0; i < _sosContacts.length; i++) {
+      if (i != index && _sosContacts[i].phone == contact.phone) return false;
+    }
+    final next = [..._sosContacts];
+    next[index] = contact;
+    _sosContacts = next;
+    await _persistContacts();
+    notifyListeners();
+    return true;
+  }
+
   /// Remove the contact at [index] (no-op if out of range).
   Future<void> removeSosContactAt(int index) async {
     if (index < 0 || index >= _sosContacts.length) return;

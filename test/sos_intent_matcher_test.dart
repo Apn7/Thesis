@@ -32,6 +32,33 @@ void main() {
       expect(matcher.match('না')?.action, 'confirm_no');
       expect(matcher.match('বাতিল')?.action, 'cancel');
     });
+
+    test('matches "delete contact" phrasing', () {
+      expect(matcher.match('যোগাযোগ মুছো')?.action, 'delete_contact');
+      expect(matcher.match('যোগাযোগ মুছে ফেলো')?.action, 'delete_contact');
+      expect(matcher.match('contact delete koro')?.action, 'delete_contact');
+    });
+
+    test('matches "edit contact" phrasing', () {
+      expect(matcher.match('যোগাযোগ বদলাও')?.action, 'edit_contact');
+      expect(matcher.match('নম্বর বদলাও')?.action, 'edit_contact');
+      expect(matcher.match('number bodlao')?.action, 'edit_contact');
+    });
+
+    test('matches "send to one contact" phrasing', () {
+      expect(matcher.match('একজনকে পাঠাও')?.action, 'send_single');
+      expect(matcher.match('শুধু একজনকে পাঠাও')?.action, 'send_single');
+      expect(matcher.match('ekjonke pathao')?.action, 'send_single');
+    });
+
+    test('add vs delete vs edit do not collide', () {
+      // These near-neighbours share the word "যোগাযোগ" — each must still
+      // resolve to its own action, never a sibling's.
+      expect(matcher.match('যোগাযোগ যোগ করো')?.action, 'add_contact');
+      expect(matcher.match('যোগাযোগ মুছো')?.action, 'delete_contact');
+      expect(matcher.match('যোগাযোগ বদলাও')?.action, 'edit_contact');
+      expect(matcher.match('যোগাযোগ পড়ো')?.action, 'read_contacts');
+    });
   });
 
   group('Global IntentMatcher.instance no longer owns SOS control words', () {
