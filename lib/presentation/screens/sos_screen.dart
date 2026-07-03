@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:vibration/vibration.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/bangla_format.dart';
@@ -97,11 +98,14 @@ class _SosScreenState extends State<SosScreen> {
     _settings.removeListener(_onSettingsChanged);
     _dialog.removeListener(_onSettingsChanged);
     // Only relinquish the pipeline if it's still ours (defensive against
-    // overlapping screens stomping each other's handler).
+    // overlapping screens stomping each other's handler). The audio hold is
+    // released under the same ownership check: re-entering SOS by voice pops
+    // this instance with a *deferred* dispose that would otherwise clear the
+    // hold the freshly-mounted SOS screen just took.
     if (_voice.transcriptInterceptor == _handleTranscript) {
       _voice.transcriptInterceptor = null;
+      SensorFusionService.instance.uiAudioHold = false;
     }
-    SensorFusionService.instance.uiAudioHold = false;
     _dialog.dispose();
     super.dispose();
   }
@@ -115,10 +119,22 @@ class _SosScreenState extends State<SosScreen> {
   /// screen); everything else goes to the contact dialog, then falls through
   /// to the global pipeline.
   Future<bool> _handleTranscript(String text) async {
-    if (_phase == _SosPhase.countdown && await _dialog.isCancelPhrase(text)) {
-      _cancel();
+    // While the countdown runs, this screen owns the voice channel outright.
+    // Anything that falls through to the global pipeline here could navigate
+    // away — and popping this screen cancels the timer, silently killing an
+    // emergency alert the user believes is being sent. Only cancel cancels;
+    // everything else gets a reminder and the countdown keeps ticking.
+    if (_phase == _SosPhase.countdown) {
+      if (await _dialog.isCancelPhrase(text)) {
+        _cancel();
+      } else {
+        VoiceAnnouncer.speak('বাতিল করতে বলুন: বাতিল।');
+      }
       return true;
     }
+    // Mid-dispatch: too late to cancel, and a stray command must not pop the
+    // screen while the SMS is in flight. Swallow input until the result.
+    if (_phase == _SosPhase.sending) return true;
     return _dialog.handleTranscript(text);
   }
 
@@ -140,16 +156,46 @@ class _SosScreenState extends State<SosScreen> {
     _runCountdown(target);
   }
 
+  /// Full-strength haptic pulse. Deliberately NOT gated on the vibration
+  /// setting: that toggle is scoped to obstacle alerts ("বাধার সতর্কতায়"),
+  /// while these pulses mark an emergency dispatch in progress — the one flow
+  /// that must reach the user through every channel at once.
+  Future<void> _buzz({List<int>? pattern, int duration = 150}) async {
+    try {
+      if (await Vibration.hasVibrator() != true) return;
+      if (pattern != null) {
+        Vibration.vibrate(
+          pattern: pattern,
+          intensities: [
+            for (var i = 0; i < pattern.length; i++) i.isOdd ? 255 : 0,
+          ],
+        );
+      } else {
+        Vibration.vibrate(duration: duration, amplitude: 255);
+      }
+    } catch (e) {
+      debugPrint('SOS buzz failed: $e');
+    }
+  }
+
   /// Speak a short intro, *then* start ticking — a periodic timer started
   /// alongside the intro would cut it off after one second, so the user never
   /// heard how to cancel. Ticks are spoken as Bengali words (the bn-BD voice
   /// reads bare ASCII digits unpredictably).
+  ///
+  /// The cancel instruction names the *whole* gesture (hold a volume button,
+  /// then say "বাতিল") — a bare "বাতিল বলুন" invites speaking into a closed
+  /// microphone and concluding that voice cancel is broken.
   Future<void> _runCountdown(EmergencyContact? target) async {
+    // Attention pulse alongside the intro: even with the phone pocketed on a
+    // loud street, the double buzz says "something big just started".
+    unawaited(_buzz(pattern: [0, 400, 120, 400]));
     await VoiceAnnouncer.announce(
       target == null
-          ? 'জরুরি বার্তা যাচ্ছে। বাতিল করতে স্ক্রিনে চাপুন বা বাতিল বলুন।'
-          : '${target.name} কে জরুরি বার্তা যাচ্ছে। '
-                'বাতিল করতে স্ক্রিনে চাপুন বা বাতিল বলুন।',
+          ? 'জরুরি বার্তা যাচ্ছে। বাতিল করতে স্ক্রিনে চাপুন, '
+                'অথবা ভলিউম বোতাম চেপে ধরে বলুন: বাতিল।'
+          : '${target.name} কে জরুরি বার্তা যাচ্ছে। বাতিল করতে স্ক্রিনে চাপুন, '
+                'অথবা ভলিউম বোতাম চেপে ধরে বলুন: বাতিল।',
     );
     if (!mounted || _phase != _SosPhase.countdown) return;
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -158,7 +204,12 @@ class _SosScreenState extends State<SosScreen> {
       if (_countdown <= 0) {
         timer.cancel();
         _dispatch();
-      } else if (!_voice.isListening && !_voice.isProcessing) {
+        return;
+      }
+      // Haptic tick every second — fires even while the mic is open, since
+      // vibration can't garble the transcript the way speech would.
+      unawaited(_buzz(duration: 120));
+      if (!_voice.isListening && !_voice.isProcessing) {
         // Stay quiet while the user is speaking a command (e.g. "বাতিল") —
         // a spoken tick would feed the open microphone and garble the
         // transcript. The countdown itself keeps running either way.
@@ -206,6 +257,9 @@ class _SosScreenState extends State<SosScreen> {
       _resultOk = ok;
       _resultMessage = message;
     });
+    // Distinct haptic verdicts: crisp double pulse = sent, one long heavy
+    // buzz = failed — the outcome reaches the user even mid-traffic-noise.
+    unawaited(ok ? _buzz(pattern: [0, 200, 120, 200]) : _buzz(duration: 700));
     await VoiceAnnouncer.announce(message);
   }
 
@@ -406,26 +460,44 @@ class _SosScreenState extends State<SosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Semantics(
-          header: true,
-          label: 'জরুরি সাহায্য',
-          child: const Text('জরুরি সাহায্য'),
+    // Back (gesture, hardware, or voice-routed pop) during countdown/sending
+    // must never *silently* kill an emergency the user believes is going out:
+    // popping this screen cancels the timer in dispose. During the countdown
+    // back performs a spoken cancel instead (press again to actually leave);
+    // during dispatch it just reports that sending is in progress.
+    final canLeave =
+        _phase != _SosPhase.countdown && _phase != _SosPhase.sending;
+    return PopScope(
+      canPop: canLeave,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_phase == _SosPhase.countdown) {
+          _cancel();
+        } else {
+          VoiceAnnouncer.announce('বার্তা পাঠানো হচ্ছে, একটু অপেক্ষা করুন।');
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Semantics(
+            header: true,
+            label: 'জরুরি সাহায্য',
+            child: const Text('জরুরি সাহায্য'),
+          ),
         ),
-      ),
-      body: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.all(AppConstants.spacingL),
-          children: [
-            _buildActionArea(),
-            if (_dialog.isActive) ...[
-              SizedBox(height: AppConstants.spacingL),
-              _buildDialogStatus(),
+        body: SafeArea(
+          child: ListView(
+            padding: EdgeInsets.all(AppConstants.spacingL),
+            children: [
+              _buildActionArea(),
+              if (_dialog.isActive) ...[
+                SizedBox(height: AppConstants.spacingL),
+                _buildDialogStatus(),
+              ],
+              SizedBox(height: AppConstants.spacingXl),
+              _buildContactsSection(),
             ],
-            SizedBox(height: AppConstants.spacingXl),
-            _buildContactsSection(),
-          ],
+          ),
         ),
       ),
     );

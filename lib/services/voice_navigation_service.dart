@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import '../core/utils/constants.dart';
+import 'earcon_service.dart';
 import 'gemini_service.dart';
 import 'groq_service.dart';
 import 'intent_matcher.dart';
@@ -168,6 +169,14 @@ class VoiceNavigationService extends ChangeNotifier {
     } catch (e) {
       debugPrint('[INIT] !! Speech init error: $e');
     }
+
+    // Preload the listen-start / listen-stop chimes so the very first
+    // push-to-talk press already gets its audible cue with zero lag.
+    try {
+      await EarconService.instance.initialize();
+    } catch (e) {
+      debugPrint('[INIT] !! Earcon init error: $e');
+    }
   }
 
   /// Setup speech recognition callbacks
@@ -216,6 +225,29 @@ class VoiceNavigationService extends ChangeNotifier {
     _setState(VoiceState.listening);
     debugPrint('[STT] >>> startListening() turn=$turn');
 
+    // Audible "I'm listening" cue, played to COMPLETION before the mic opens.
+    // Playing it concurrently with capture start broke STT on real hardware:
+    // audioplayers contends with the record plugin over the Android audio
+    // session and the capture stream can die silently. The wait is short
+    // (~230 ms, the chime's length) and bounded, and doubles as the natural
+    // "speak after the tone" rhythm the help tips teach.
+    try {
+      await EarconService.instance.playListenStart();
+    } catch (_) {}
+
+    // The chime wait opens two race windows; in both, this turn must not
+    // touch the microphone:
+    //  * a newer press (barge-in) superseded us → that turn owns everything;
+    //  * the button was released mid-chime → too short to contain speech, so
+    //    close the turn with the standard retry cue instead of stranding the
+    //    'thinking' state that stopListening() just set.
+    if (turn != _turn) return;
+    if (_state != VoiceState.listening) {
+      _setState(VoiceState.idle);
+      VoiceAnnouncer.announce('শুনতে পাইনি, আবার বলুন।');
+      return;
+    }
+
     try {
       // Blocks for the whole hold; the final transcript arrives via onResult
       // and is handled in [_onFinalTranscript]. After this returns the state is
@@ -238,6 +270,10 @@ class VoiceNavigationService extends ChangeNotifier {
     // there's anything to process.
     _setState(VoiceState.thinking);
     await _speech.stopListening();
+    // Falling "got it" cue AFTER the tail-drain: by now the pipeline has shut
+    // capture down, so the chime can neither leak into the transcript nor
+    // contend with the recorder (the failure mode the start chime hit).
+    unawaited(EarconService.instance.playListenStop());
   }
 
   void _onFinalTranscript(String text) {
@@ -442,6 +478,20 @@ class VoiceNavigationService extends ChangeNotifier {
       action == VoiceAction.speechFaster ||
       action == VoiceAction.speechSlower ||
       action == VoiceAction.speakCommands;
+
+  /// The spoken tips (পরামর্শ) — how to hold a conversation with the app.
+  /// Shared with the help screen (which mirrors these in its visible tip
+  /// cards) so the spoken and written guidance never drift apart. Read out
+  /// *before* [commandTour] on the help page: the user must know how to talk
+  /// to the app before a list of things to say is useful.
+  static const String helpTips =
+      'কিছু পরামর্শ: '
+      'যেকোনো পেইজ থেকে যেকোনো ভলিউম বোতাম চেপে ধরে কথা বলুন, '
+      'বলা শেষ হলে বোতাম ছাড়ুন। '
+      'বোতাম চাপার পর ছোট্ট সুর বাজবে — সুর শুনে তবেই কথা শুরু করুন। '
+      'স্পষ্টভাবে ও স্বাভাবিক গতিতে বলুন। '
+      'ভালো ফলের জন্য শান্ত পরিবেশে ব্যবহার করুন। '
+      'অ্যাপ কথা বলার সময় ভলিউম বোতাম চাপলে সে থেমে আপনার কথা শোনে।';
 
   /// The spoken command tour — the full "what can I say" list, shared with the
   /// help screen so what the user hears always matches what is documented.

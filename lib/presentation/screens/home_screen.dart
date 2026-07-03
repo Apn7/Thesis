@@ -6,13 +6,16 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/bangla_format.dart';
 import '../../core/utils/constants.dart';
 import '../../core/navigation/app_routes.dart';
+import '../../core/utils/voice_announcer.dart';
 // import '../../services/ble_service.dart'; // Pi BLE — disabled
 import '../../services/cane_foreground_service.dart';
 import '../../services/device_info_service.dart';
+import '../../services/earcon_service.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
 import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
+import '../../services/tts_service.dart';
 import '../../services/voice_navigation_service.dart';
 import '../widgets/accessible_action_button.dart';
 import '../widgets/colorful_waveform.dart';
@@ -58,6 +61,19 @@ class _HomeScreenState extends State<HomeScreen>
   /// are silent — the user already knows the situation is improving.
   ObstacleVerdict _lastObstacleVerdict = ObstacleVerdict.noData;
 
+  /// One-shot spoken onboarding: shortly after "প্রস্তুত" lands the user on
+  /// Home, explain how to trigger the voice assistant and point them at the
+  /// help page. Static so returning to Home later in the same session never
+  /// repeats the lecture.
+  static bool _launchHintGiven = false;
+  Timer? _launchHintTimer;
+  int _launchHintAttempts = 0;
+
+  static const String _launchHint =
+      'ভয়েস সহকারী ব্যবহার করতে যেকোনো ভলিউম বোতাম চেপে ধরে কথা বলুন, '
+      'বলা শেষ হলে বোতাম ছাড়ুন। '
+      'সব কমান্ড ও পরামর্শ শিখতে বলুন: সাহায্য।';
+
   /// Pre-loaded player for the CRITICAL alert tone.  Preloading at init
   /// avoids first-play latency at the moment the user most needs immediate
   /// feedback.
@@ -85,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen>
     _initializeServices();
     _setupNavigationCallback();
     _prepareAlertPlayer();
+    _scheduleLaunchHint();
     // Pi BLE init — disabled
     // if (AppConstants.enablePiBle) {
     //   _initializeBle();
@@ -115,6 +132,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (AppConstants.enableSensorFusion) {
       SensorFusionService.instance.stop();
     }
+    _launchHintTimer?.cancel();
     _vibrationTimer?.cancel();
     Vibration.cancel(); // stop any ongoing vibration immediately
     _alertPlayer.dispose();
@@ -191,8 +209,13 @@ class _HomeScreenState extends State<HomeScreen>
       // De-escalation stays silent — the slower vibration already tells
       // the user the situation improved.
       if (verdict.severity > previous.severity) {
+        // Never speak over an open microphone: the TTS would be captured by
+        // the mic and garble the command being dictated (fusion applies the
+        // same policy via voicePipelineBusy). Vibration + the CRITICAL tone
+        // below still fire, so the safety signal is not reduced.
+        final micOpen = _voiceService.isListening || _voiceService.isProcessing;
         final speech = _escalationSpeech(verdict);
-        if (speech.isNotEmpty) {
+        if (speech.isNotEmpty && !micOpen) {
           _voiceService.speak(speech);
         }
         // Distinctive alarm tone — reserved for CRITICAL so the sound
@@ -207,20 +230,28 @@ class _HomeScreenState extends State<HomeScreen>
     _distanceSource.addListener(() {
       if (!mounted) return;
       setState(() {});
+      // Link-state announcements obey the same open-mic rule as escalation
+      // speech: status info is not worth garbling a command being dictated.
+      // The home card shows the link state either way.
+      final micOpen = _voiceService.isListening || _voiceService.isProcessing;
       if (_distanceSource.state == SensorLinkState.connected &&
           !_sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = true;
-        _voiceService.speak('লাঠির সেন্সর সংযুক্ত হয়েছে।');
+        if (!micOpen) {
+          _voiceService.speak('লাঠির সেন্সর সংযুক্ত হয়েছে।');
+        }
       } else if (_distanceSource.state == SensorLinkState.disconnected &&
           _sensorConnectionAnnounced) {
         _sensorConnectionAnnounced = false;
         _vibrationTimer?.cancel();
         _vibrationTimer = null;
         Vibration.cancel();
-        _voiceService.stopSpeaking();
         _stopAlertTone();
         _lastObstacleVerdict = ObstacleVerdict.noData;
-        _voiceService.speak('লাঠির সেন্সর বিচ্ছিন্ন হয়েছে।');
+        if (!micOpen) {
+          _voiceService.stopSpeaking();
+          _voiceService.speak('লাঠির সেন্সর বিচ্ছিন্ন হয়েছে।');
+        }
       }
     });
 
@@ -293,39 +324,55 @@ class _HomeScreenState extends State<HomeScreen>
     // off also silences an already-running loop on the next verdict change.
     if (!SettingsService.instance.vibrationEnabled) return;
 
+    // Every pulse below pins the motor amplitude explicitly (255 = hardware
+    // max; the plugin default of -1 lets the OEM pick a often-tame default).
+    // Tiers stay distinguishable by *rhythm*, not strength — through a pocket
+    // or bag, a weak pulse simply doesn't exist.
     switch (verdict) {
       case ObstacleVerdict.critical:
         // Near-continuous opening burst: five 600 ms pulses separated by
         // only 80 ms gaps — feels like one long shake with texture.
         Vibration.vibrate(
           pattern: [0, 600, 80, 600, 80, 600, 80, 600, 80, 600],
+          intensities: [0, 255, 0, 255, 0, 255, 0, 255, 0, 255],
         );
         // Sustained ~90 % duty cycle loop: 450 ms vibrate every 500 ms.
         // Impossible to ignore even through a backpack.
         _vibrationTimer = Timer.periodic(
           const Duration(milliseconds: 500),
-          (_) => Vibration.vibrate(duration: 450),
+          (_) => Vibration.vibrate(duration: 450, amplitude: 255),
         );
         break;
       case ObstacleVerdict.warning:
         // Medium double pulse, then a 1.5 s repeat.
-        Vibration.vibrate(pattern: [0, 250, 120, 250]);
+        Vibration.vibrate(
+          pattern: [0, 250, 120, 250],
+          intensities: [0, 255, 0, 255],
+        );
         _vibrationTimer = Timer.periodic(
           const Duration(milliseconds: 1500),
-          (_) => Vibration.vibrate(duration: 250),
+          (_) => Vibration.vibrate(duration: 250, amplitude: 255),
         );
         break;
       case ObstacleVerdict.caution:
-        // Triple light tap — distinctive 'tic-tic-tic' rhythm so the user
-        // can tell CAUTION apart from WARNING's heavier double-pulse and
-        // CRITICAL's continuous shake by feel alone.  Loop every 2.5 s as
-        // a gentle background reminder for distant obstacles — frequent
-        // enough to keep awareness, sparse enough not to nag.
+        // Triple tap — distinctive 'tic-tic-tic' rhythm so the user can tell
+        // CAUTION apart from WARNING's heavier double-pulse and CRITICAL's
+        // continuous shake by feel alone.  Strong taps (200) so they register
+        // through fabric, but a step below the alarm tiers.  Loop every 2.5 s
+        // as a background reminder for distant obstacles — frequent enough to
+        // keep awareness, sparse enough not to nag.
         const cautionPattern = [0, 80, 80, 80, 80, 80];
-        Vibration.vibrate(pattern: cautionPattern);
+        const cautionIntensities = [0, 200, 0, 200, 0, 200];
+        Vibration.vibrate(
+          pattern: cautionPattern,
+          intensities: cautionIntensities,
+        );
         _vibrationTimer = Timer.periodic(
           const Duration(milliseconds: 2500),
-          (_) => Vibration.vibrate(pattern: cautionPattern),
+          (_) => Vibration.vibrate(
+            pattern: cautionPattern,
+            intensities: cautionIntensities,
+          ),
         );
         break;
       case ObstacleVerdict.safe:
@@ -341,6 +388,15 @@ class _HomeScreenState extends State<HomeScreen>
   /// Failures degrade gracefully: vibration + speech still fire.
   Future<void> _prepareAlertPlayer() async {
     try {
+      // No-focus context: a CRITICAL can fire while the user is dictating a
+      // command, and a focus-grabbing player can silently kill the record
+      // plugin's capture stream (see EarconService.noFocusContext). The alarm
+      // must sound *alongside* the mic and TTS, never fight them.
+      try {
+        await _alertPlayer.setAudioContext(EarconService.noFocusContext);
+      } catch (e) {
+        debugPrint('>> Alert player context not applied: $e');
+      }
       await _alertPlayer.setReleaseMode(ReleaseMode.stop);
       await _alertPlayer.setSource(AssetSource('alerts/alert.wav'));
       _alertReady = true;
@@ -377,6 +433,33 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _initializeServices() async {
     await _voiceService.initialize();
+  }
+
+  /// Queue the one-shot voice-assist onboarding hint. A pause after the
+  /// splash's "প্রস্তুত" lets that sentence land (and any sensor-connected
+  /// announcement pass) before the tutorial voice starts.
+  void _scheduleLaunchHint() {
+    if (_launchHintGiven) return;
+    _launchHintTimer = Timer(const Duration(seconds: 6), _tryLaunchHint);
+  }
+
+  /// Speak the hint only into silence. If a voice turn is live or the TTS is
+  /// mid-sentence, retry shortly; after a few busy attempts give up entirely —
+  /// a user already talking to the app doesn't need to be taught how.
+  void _tryLaunchHint() {
+    if (!mounted || _launchHintGiven) return;
+    // Home must be the *visible* route: if the user already navigated away
+    // (Home stays mounted beneath the pushed screen), speaking now would
+    // interrupt that screen's own announcement — e.g. the help tour.
+    final onTop = ModalRoute.of(context)?.isCurrent ?? true;
+    if (!onTop || _voiceService.isBusy || TtsService.instance.isSpeaking) {
+      if (++_launchHintAttempts < 3) {
+        _launchHintTimer = Timer(const Duration(seconds: 5), _tryLaunchHint);
+      }
+      return;
+    }
+    _launchHintGiven = true;
+    VoiceAnnouncer.announce(_launchHint);
   }
 
   /// Speak the phone's real battery level in Bengali. An unreadable level is

@@ -2,17 +2,31 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Smart Cane (debug)",
+      // Uses whichever device is selected in the VS Code status bar (bottom
+      // right). Pick "RMX3363 (wireless)" there before pressing F5. No
+      // deviceId pin: on wireless debugging the phone can appear twice via
+      // mDNS (one a half-resolved "unsupported" phantom), and a pin can latch
+      // onto the phantom and report "no Android devices".
+      "name": "Smart Cane (debug — pick device in status bar)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart"
     },
     {
-      "name": "Smart Cane (release)",
+      "name": "Smart Cane (release — pick device in status bar)",
       "request": "launch",
       "type": "dart",
       "program": "lib/main.dart",
       "flutterMode": "release"
+    },
+    {
+      // Explicit desktop config for when you deliberately want Windows.
+      // Note: flutter_tts is stubbed on Windows (logs instead of speaking).
+      "name": "Smart Cane (Windows debug — TTS stubbed)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "deviceId": "windows"
     }
   ]
 }

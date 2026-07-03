@@ -21,9 +21,17 @@ class _HelpScreenState extends State<HelpScreen> {
   @override
   void initState() {
     super.initState();
+    // Guided spoken tour, in learning order: first the পরামর্শ (how to talk
+    // to the app), then the full command list — a blind user gets the whole
+    // manual read to them just by opening this page. Interruptible at any
+    // moment: pressing a volume button barges in and stops the tour.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       VoiceAnnouncer.announce(
-        'সাহায্য পেইজ। সব কমান্ড শুনতে বলুন: কমান্ড বলো।',
+        'সাহায্য পেইজ। '
+        '${VoiceNavigationService.helpTips} '
+        'এবার কমান্ডের তালিকা। '
+        '${VoiceNavigationService.commandTour} '
+        'সব কমান্ড আবার শুনতে বলুন: কমান্ড বলো।',
       );
     });
   }
@@ -105,7 +113,9 @@ class _HelpScreenState extends State<HelpScreen> {
               context,
               step: '১',
               title: 'ভলিউম বোতাম চেপে ধরুন',
-              description: 'যেকোনো পেইজ থেকে ভলিউম বোতাম চেপে ধরে কথা বলুন।',
+              description:
+                  'যেকোনো পেইজ থেকে ভলিউম বোতাম চেপে ধরুন। '
+                  'ছোট্ট সুর বাজলে কথা বলা শুরু করুন।',
               icon: Icons.mic,
               color: AppColors.accent,
             ),
@@ -225,8 +235,15 @@ class _HelpScreenState extends State<HelpScreen> {
 
             SizedBox(height: AppConstants.spacingXl),
 
-            // Tips Section
+            // Tips Section — mirrors VoiceNavigationService.helpTips.
             _buildSectionHeader(context, 'পরামর্শ'),
+
+            _buildTipCard(
+              context,
+              icon: Icons.music_note,
+              tip: 'বোতাম চাপার পর ছোট্ট সুর শুনে তবেই কথা শুরু করুন',
+              color: AppColors.accent,
+            ),
 
             _buildTipCard(
               context,
