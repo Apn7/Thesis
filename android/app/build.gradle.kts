@@ -20,8 +20,16 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.test_app_1"
+        // App/OS-facing package identity. Deliberately DIFFERENT from the
+        // `namespace` above (which stays com.example.test_app_1 so the Kotlin
+        // package + MethodChannel strings + MainActivity path are unchanged).
+        // The OS keys all remembered per-app decisions — the WifiNetwork-
+        // Specifier approval and MIUI's intent-chooser "don't ask again"
+        // default — to THIS applicationId, so bumping it is the clean-room
+        // reset when a wrong choice gets cached (uninstall/network-reset don't
+        // clear MIUI's preferred-activity default). Bump the suffix again if it
+        // ever needs another pristine identity.
+        applicationId = "com.smartcane.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // LiteRT-LM requires Android 12 (API 31) minimum.

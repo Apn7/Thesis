@@ -51,4 +51,13 @@ class VisionStrings {
   // Home-screen entry tile
   static const String piTileLabel = 'কেইন ক্যাম';
   static const String piTileHint = 'লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ।';
+
+  // Pi AP join (WifiNetworkSpecifier — joining the camera's own WiFi)
+  static const String piWifiConnect = 'ক্যামেরার ওয়াইফাই যুক্ত করুন';
+  static const String piWifiSearching =
+      'ক্যামেরা খোঁজা হচ্ছে... চালু হলে নিজে থেকেই যুক্ত হবে।';
+  static const String piWifiConnected = 'ক্যামেরার ওয়াইফাই যুক্ত হয়েছে।';
+  static const String piWifiFailed =
+      'ওয়াইফাই যুক্ত করা যায়নি। পাই চালু আছে কিনা দেখুন।';
+  static const String piWifiLost = 'ক্যামেরার ওয়াইফাই সংযোগ বিচ্ছিন্ন হয়েছে।';
 }

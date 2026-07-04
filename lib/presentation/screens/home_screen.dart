@@ -13,6 +13,7 @@ import '../../services/device_info_service.dart';
 import '../../services/earcon_service.dart';
 import '../../services/esp_ble_service.dart';
 import '../../services/pi_distance_service.dart';
+import '../../services/pi_wifi_service.dart';
 import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/tts_service.dart';
@@ -122,10 +123,85 @@ class _HomeScreenState extends State<HomeScreen>
     if (AppConstants.enableSensorFusion || AppConstants.enablePiDistance) {
       CaneForegroundService.start();
     }
+    // Hands-free cane link: silently join the Pi's own WiFi AP so the frame
+    // and sonar streams (both ride this one link) start with zero taps.
+    // Internet stays on mobile data — the link is app-scoped and local-only.
+    // Only the very first launch on a phone shows a system consent dialog.
+    if (_piAutoJoinActive) {
+      PiWifiService.instance.addListener(_onPiWifiChanged);
+      _startPiAutoJoin();
+    }
+  }
+
+  /// On the very first launch on a phone, the OS shows a one-time consent
+  /// window before it will join the cane's WiFi (a platform security
+  /// boundary — it cannot be auto-accepted). Speak what's about to happen
+  /// and what to press so a blind user isn't ambushed by a silent dialog.
+  /// Every later launch skips the speech and connects silently.
+  Future<void> _startPiAutoJoin() async {
+    final paired = await PiWifiService.instance.hasPairedBefore();
+    if (!mounted) return;
+    if (!paired) {
+      _voiceService.speak(
+        'প্রথমবার ক্যামেরা যুক্ত করতে পর্দায় একটি অনুমতির উইন্ডো আসবে। '
+        'সেখান থেকে স্মার্টকেইন ক্যাম বেছে নিয়ে সংযুক্ত বা কানেক্ট চাপুন। '
+        'এটি শুধু একবারই লাগবে।',
+      );
+    }
+    PiWifiService.instance.enableAutoJoin();
+  }
+
+  /// Auto-join runs whenever any Pi stream (frames or sonar) is in use.
+  bool get _piAutoJoinActive =>
+      AppConstants.enablePiAutoJoin &&
+      (AppConstants.enableSensorFusion || AppConstants.enablePiDistance);
+
+  /// One-shot spoken guidance for the two cane-link failures the user must act
+  /// on: WiFi toggle off, and the consent dialog being declined (a declined
+  /// "don't ask again" is remembered by the OS and blocks silent retries, so
+  /// we must tell them). Everything else stays silent — the link retries on
+  /// its own and the sensor-connected announcement fires once data flows.
+  bool _wifiOffAnnounced = false;
+  bool _wifiDeclineAnnounced = false;
+
+  void _onPiWifiChanged() {
+    if (!mounted) return;
+    final state = PiWifiService.instance.state;
+    // Same open-mic rule as the sensor link-state announcements.
+    final micOpen = _voiceService.isListening || _voiceService.isProcessing;
+    if (state == PiWifiState.wifiOff && !_wifiOffAnnounced) {
+      _wifiOffAnnounced = true;
+      if (!micOpen) {
+        _voiceService.speak('লাঠির ক্যামেরা পেতে ফোনের ওয়াইফাই চালু করুন।');
+      }
+    } else if (state == PiWifiState.failed && !_wifiDeclineAnnounced) {
+      _wifiDeclineAnnounced = true;
+      if (!micOpen) {
+        _voiceService.speak(
+          'ক্যামেরার অনুমতি দেওয়া হয়নি। সংযোগ পেতে অনুমতির উইন্ডোতে '
+          'স্মার্টকেইন ক্যাম বেছে নিয়ে কানেক্ট চাপুন। বারবার সমস্যা হলে '
+          'অ্যাপটি একবার আনইনস্টল করে আবার ইনস্টল করুন।',
+        );
+      }
+    } else if (state == PiWifiState.connected) {
+      // A later successful join clears the one-shot latches so a genuinely
+      // new problem later in the session can speak again.
+      _wifiOffAnnounced = false;
+      _wifiDeclineAnnounced = false;
+    }
   }
 
   @override
   void dispose() {
+    if (_piAutoJoinActive) {
+      PiWifiService.instance.removeListener(_onPiWifiChanged);
+      PiWifiService.instance.disableAutoJoin();
+      // Deliberately NOT release()d: the cane WiFi link is process-scoped on
+      // the native side (survives Activity teardown) and the foreground
+      // service keeps it up while the phone is pocketed. Releasing here would
+      // drop the link on every screen-off / re-entry — the exact bug this
+      // path used to cause. It drops only on real session end (process death).
+    }
     if (AppConstants.enableSensorFusion || AppConstants.enablePiDistance) {
       CaneForegroundService.stop();
     }

@@ -9,6 +9,7 @@ import '../../core/utils/constants.dart';
 import '../../core/utils/vision_strings.dart';
 import '../../services/detection_models.dart';
 import '../../services/pi_frame_server.dart';
+import '../../services/pi_wifi_service.dart';
 import '../../services/sensor_fusion_service.dart';
 import '../widgets/detection_list_tile.dart';
 
@@ -149,6 +150,7 @@ class _PiVisionScreenState extends State<PiVisionScreen>
         ),
         centerTitle: true,
         elevation: 0,
+        actions: [_buildWifiAction()],
       ),
       body: Column(
         children: [
@@ -157,6 +159,55 @@ class _PiVisionScreenState extends State<PiVisionScreen>
           const Divider(height: 1),
           Expanded(flex: 2, child: _buildDetectionsList()),
         ],
+      ),
+    );
+  }
+
+  /// AppBar button that joins the Pi's own access point via
+  /// [PiWifiService] (WifiNetworkSpecifier). The link is app-scoped, so we
+  /// deliberately do NOT release it on dispose — fusion keeps consuming
+  /// frames on HomeScreen after this debug view closes.
+  Widget _buildWifiAction() {
+    return ListenableBuilder(
+      listenable: PiWifiService.instance,
+      builder: (context, _) {
+        final wifi = PiWifiService.instance;
+        final requesting = wifi.state == PiWifiState.requesting;
+        return IconButton(
+          iconSize: 28,
+          tooltip: VisionStrings.piWifiConnect,
+          onPressed: requesting ? null : _connectPiWifi,
+          icon: requesting
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                )
+              : Icon(switch (wifi.state) {
+                  PiWifiState.connected => Icons.wifi,
+                  PiWifiState.failed || PiWifiState.lost => Icons.wifi_off,
+                  _ => Icons.wifi_find,
+                }),
+        );
+      },
+    );
+  }
+
+  Future<void> _connectPiWifi() async {
+    final wifi = PiWifiService.instance;
+    if (wifi.state == PiWifiState.connected) return;
+    // connect() resolves when the persistent request is REGISTERED; the OS
+    // joins whenever the cane's AP appears and the icon follows the state.
+    final registered = await wifi.connect();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          registered
+              ? VisionStrings.piWifiSearching
+              : '${VisionStrings.piWifiFailed}'
+                    '${wifi.errorMessage == null ? '' : '\n${wifi.errorMessage}'}',
+        ),
       ),
     );
   }

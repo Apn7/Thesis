@@ -87,6 +87,20 @@ class AppConstants {
   /// prefix followed by that many JPEG bytes.
   static const int piFrameHeaderBytes = 4;
 
+  /// Credentials of the access point the **Pi itself hosts** (fallback-AP
+  /// provisioning, comitup-style). The app joins it with Android's
+  /// WifiNetworkSpecifier — an app-scoped, local-only link that never becomes
+  /// the default route, so the phone's internet (Groq, geocoding) stays on
+  /// mobile data. Must match the Pi's `smartcane-ap` NetworkManager profile.
+  static const String piApSsid = 'SmartCane-Cam';
+  static const String piApPsk = 'smartcane123';
+
+  /// Auto-join the cane's AP hands-free when the sensor pipeline starts
+  /// (HomeScreen), instead of requiring the Cane Cam screen's debug button.
+  /// First-ever join on a phone shows the one-time system consent dialog;
+  /// after that every launch connects silently.
+  static const bool enablePiAutoJoin = true;
+
   // ── Pi Zero distance (HC-SR04 over WiFi) ──────────────────────────────
   // Replaces the ESP32 ultrasonic path. The Pi reads the HC-SR04 and dials
   // the phone here, pushing newline-delimited centimetre readings; the app
