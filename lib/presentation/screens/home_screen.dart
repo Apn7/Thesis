@@ -156,13 +156,17 @@ class _HomeScreenState extends State<HomeScreen>
       AppConstants.enablePiAutoJoin &&
       (AppConstants.enableSensorFusion || AppConstants.enablePiDistance);
 
-  /// One-shot spoken guidance for the two cane-link failures the user must act
-  /// on: WiFi toggle off, and the consent dialog being declined (a declined
+  /// One-shot spoken guidance for the cane-link failures the user must act
+  /// on: WiFi toggle off, the consent dialog being declined (a declined
   /// "don't ask again" is remembered by the OS and blocks silent retries, so
-  /// we must tell them). Everything else stays silent — the link retries on
-  /// its own and the sensor-connected announcement fires once data flows.
+  /// we must tell them), and the join being blocked because the phone is
+  /// parked on another WiFi (home/campus) — Android then re-shows the consent
+  /// window instead of switching silently, and a blind user must know to
+  /// press Connect. Everything else stays silent — the link retries on its
+  /// own and the sensor-connected announcement fires once data flows.
   bool _wifiOffAnnounced = false;
   bool _wifiDeclineAnnounced = false;
+  bool _wifiBlockedAnnounced = false;
 
   void _onPiWifiChanged() {
     if (!mounted) return;
@@ -183,11 +187,26 @@ class _HomeScreenState extends State<HomeScreen>
           'অ্যাপটি একবার আনইনস্টল করে আবার ইনস্টল করুন।',
         );
       }
+    } else if (state == PiWifiState.requesting &&
+        PiWifiService.instance.blockingWifiSsid != null &&
+        !_wifiBlockedAnnounced) {
+      // The watchdog found the phone glued to another WiFi while the cane
+      // searches. The OS will re-surface its consent window on each re-file;
+      // tell the user what is happening and what to press.
+      _wifiBlockedAnnounced = true;
+      if (!micOpen) {
+        _voiceService.speak(
+          'ফোনটি এখন অন্য একটি ওয়াইফাইতে যুক্ত, তাই লাঠির ক্যামেরা এখনো '
+          'যুক্ত হয়নি। পর্দায় অনুমতির উইন্ডো এলে স্মার্টকেইন ক্যাম বেছে '
+          'নিয়ে কানেক্ট চাপুন।',
+        );
+      }
     } else if (state == PiWifiState.connected) {
       // A later successful join clears the one-shot latches so a genuinely
       // new problem later in the session can speak again.
       _wifiOffAnnounced = false;
       _wifiDeclineAnnounced = false;
+      _wifiBlockedAnnounced = false;
     }
   }
 

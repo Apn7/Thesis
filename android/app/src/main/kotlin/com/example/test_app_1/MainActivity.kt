@@ -54,6 +54,16 @@ class MainActivity : FlutterActivity() {
         private var piWifiChannel: MethodChannel? = null
         private var piWifiCallback: ConnectivityManager.NetworkCallback? = null
         private var piWifiConnected = false
+
+        // Held while the cane link is up to keep the phone's Wi-Fi STA radio
+        // OUT of power-save. Without it, Android throttles the client radio
+        // when the app backgrounds / the screen turns off (the cane is used
+        // pocketed) — "low performance mode": high latency, and disconnects.
+        // This is exactly why debug/hotspot mode felt rock-solid but the Pi's
+        // own AP link stutters: with the phone as hotspot the radio is an AP
+        // and never power-saves; as a client of the Pi it does. Process-scoped
+        // like the request so it rides the foreground service's lifetime.
+        private var piWifiLock: WifiManager.WifiLock? = null
     }
 
     // Channel used to forward consumed hardware-key events (volume up) to Dart.
@@ -226,6 +236,87 @@ class MainActivity : FlutterActivity() {
                     releasePiNetwork()
                     result.success(true)
                 }
+                "refreshNetwork" -> {
+                    // Re-file the specifier request (drop + register fresh).
+                    // Android evaluates a request against scans and the stored
+                    // approval only while it is "new": on Android 12/13 the
+                    // silent-approval bypass is REVOKED whenever the phone is
+                    // already on another WiFi and no secondary STA is free
+                    // (AOSP WifiNetworkFactory), and OEM builds can wedge a
+                    // long-lived unfulfilled request entirely. Re-filing
+                    // restarts the platform's own 10 s periodic scans from an
+                    // immediate scan and forces a fresh connect-or-dialog
+                    // decision — this is how the cane keeps contesting the
+                    // home WiFi instead of waiting forever. No-op while the
+                    // cane link is live (never drop a working connection).
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                        result.error(
+                            "UNSUPPORTED",
+                            "WifiNetworkSpecifier requires Android 10+",
+                            null,
+                        )
+                        return@setMethodCallHandler
+                    }
+                    val ssid = call.argument<String>("ssid")
+                    val psk = call.argument<String>("psk")
+                    if (ssid.isNullOrEmpty() || psk.isNullOrEmpty()) {
+                        result.error("BAD_ARGS", "ssid and psk are required", null)
+                        return@setMethodCallHandler
+                    }
+                    if (piWifiConnected) {
+                        result.success(false)
+                        return@setMethodCallHandler
+                    }
+                    releasePiNetwork()
+                    requestPiNetwork(ssid, psk, result)
+                }
+                "getCurrentWifiSsid" -> {
+                    // SSID the phone's WiFi is currently associated to, or
+                    // null. Lets Dart tell "cane AP not in range" apart from
+                    // "phone is parked on home WiFi and the OS wants a dialog
+                    // tap before it will switch" — the two need different
+                    // spoken guidance. Requires location permission (the app
+                    // already holds it for GPS); returns null when the OS
+                    // masks the SSID.
+                    try {
+                        val wm = applicationContext
+                            .getSystemService(Context.WIFI_SERVICE) as WifiManager
+                        @Suppress("DEPRECATION")
+                        val raw = wm.connectionInfo?.ssid
+                        val ssid = raw?.removeSurrounding("\"")
+                        result.success(
+                            if (ssid.isNullOrEmpty() ||
+                                ssid == WifiManager.UNKNOWN_SSID
+                            ) {
+                                null
+                            } else {
+                                ssid
+                            },
+                        )
+                    } catch (e: Exception) {
+                        result.success(null)
+                    }
+                }
+                "isLocalOnlyStaSupported" -> {
+                    // Android 12+ devices that support a second station
+                    // interface can join the cane WITHOUT leaving home WiFi
+                    // (and keep the silent-approval bypass). Diagnostic for
+                    // logs/thesis; false on older SDKs or plain radios.
+                    result.success(
+                        try {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                val wm = applicationContext.getSystemService(
+                                    Context.WIFI_SERVICE,
+                                ) as WifiManager
+                                wm.isStaConcurrencyForLocalOnlyConnectionsSupported
+                            } else {
+                                false
+                            }
+                        } catch (e: Exception) {
+                            false
+                        },
+                    )
+                }
                 "isWifiEnabled" -> {
                     try {
                         val wm = applicationContext
@@ -277,6 +368,10 @@ class MainActivity : FlutterActivity() {
             override fun onAvailable(network: Network) {
                 piWifiMainHandler.post {
                     piWifiConnected = true
+                    // Pin the radio to full performance now that the cane link
+                    // is live — held through brief losses so a blip re-heals
+                    // fast instead of stuttering under power-save.
+                    acquirePiWifiLock()
                     piWifiChannel?.invokeMethod("onPiWifiAvailable", null)
                 }
             }
@@ -337,12 +432,47 @@ class MainActivity : FlutterActivity() {
         val cb = piWifiCallback ?: return
         piWifiCallback = null
         piWifiConnected = false
+        releasePiWifiLock()
         try {
             val cm = applicationContext
                 .getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             cm.unregisterNetworkCallback(cb)
         } catch (_: Exception) {
             // Already unregistered (e.g. after onUnavailable) — fine.
+        }
+    }
+
+    /** Keep the Wi-Fi STA radio at full performance (power-save OFF) while the
+     *  cane link is up. HIGH_PERF, not LOW_LATENCY: LOW_LATENCY only engages
+     *  when the app is foreground AND the screen is on, which a pocketed cane
+     *  never is — HIGH_PERF holds across screen-off/background, which is
+     *  exactly the pocketed case that was stuttering. Not reference-counted
+     *  and guarded by isHeld so repeated calls are safe. Non-fatal on failure:
+     *  the link still works, it just may see power-save latency. */
+    @Suppress("DEPRECATION")
+    private fun acquirePiWifiLock() {
+        try {
+            if (piWifiLock?.isHeld == true) return
+            val wm = applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val lock = piWifiLock ?: wm.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "SmartCane:PiLink",
+            ).also {
+                it.setReferenceCounted(false)
+                piWifiLock = it
+            }
+            lock.acquire()
+        } catch (e: Exception) {
+            // Radio stays in its default power policy — link still functions.
+        }
+    }
+
+    private fun releasePiWifiLock() {
+        try {
+            piWifiLock?.let { if (it.isHeld) it.release() }
+        } catch (_: Exception) {
+            // Never held or already released — nothing to do.
         }
     }
 

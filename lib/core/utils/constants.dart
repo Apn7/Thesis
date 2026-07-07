@@ -101,6 +101,19 @@ class AppConstants {
   /// after that every launch connects silently.
   static const bool enablePiAutoJoin = true;
 
+  /// Stuck-join escalation cadence (seconds). While the specifier request
+  /// sits unfulfilled in `requesting`, PiWifiService re-files it natively at
+  /// this interval. Why re-file at all: on Android 12/13 the OS *revokes* the
+  /// remembered silent approval whenever the phone is already associated to
+  /// another WiFi (home/campus) and the radio can't host a second station
+  /// interface — it then wants to re-show the consent dialog, but only
+  /// re-evaluates all of this for a *freshly filed* request. Re-filing also
+  /// restarts the platform's 10 s request scans with an immediate sweep.
+  /// Long enough for a TalkBack user to find and press Connect on a consent
+  /// window before it is replaced; short enough that the cane keeps winning
+  /// the radio back from home WiFi within a minute of app entry.
+  static const int piWifiRefileSeconds = 45;
+
   // ── Pi Zero distance (HC-SR04 over WiFi) ──────────────────────────────
   // Replaces the ESP32 ultrasonic path. The Pi reads the HC-SR04 and dials
   // the phone here, pushing newline-delimited centimetre readings; the app
@@ -151,7 +164,7 @@ class AppConstants {
   /// Sliding-window frame count. An object is only *confirmed* (and eligible
   /// to be announced) once it appears in a majority of the last N frames —
   /// this stabilises flickery single-frame detections. At the Pi path's
-  /// ~8–9 fps, 5 frames ≈ 0.5 s of evidence (acceptable latency).
+  /// ~10 fps, 5 frames ≈ 0.5 s of evidence (acceptable latency).
   static const int fusionWindowSize = 5;
 
   /// Minimum frames (out of [fusionWindowSize]) an object must appear in to
