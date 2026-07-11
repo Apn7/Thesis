@@ -3,6 +3,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
 import '../../services/location_service.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../widgets/info_card.dart';
 
 /// Location screen: fetches GPS + address and — voice first — *speaks* the
@@ -32,12 +33,23 @@ class _LocationScreenState extends State<LocationScreen> {
   @override
   void initState() {
     super.initState();
+    // Own the audio channel while mounted (SOS pattern): the address readout
+    // arrives *seconds* after entry (GPS + geocoding), and fusion's obstacle
+    // callouts would interrupt it — TTS is last-writer-wins. The sonar
+    // CRITICAL alarm is independent and still gets through.
+    SensorFusionService.instance.holdUiAudio(this);
     // Orient the user, then fetch. The entry line is short so the address
     // announcement (seconds later, after GPS + geocoding) never collides.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       VoiceAnnouncer.announce('অবস্থান পেইজ। জিপিএস থেকে অবস্থান নিচ্ছি।');
       _fetchLocation();
     });
+  }
+
+  @override
+  void dispose() {
+    SensorFusionService.instance.releaseUiAudio(this);
+    super.dispose();
   }
 
   /// Speak the fetched address — the entire point of this screen for a blind

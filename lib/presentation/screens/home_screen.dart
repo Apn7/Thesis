@@ -81,6 +81,11 @@ class _HomeScreenState extends State<HomeScreen>
   final AudioPlayer _alertPlayer = AudioPlayer();
   bool _alertReady = false;
 
+  /// CRITICAL tone playback level (0..1). Kept below full scale — at 1.0 the
+  /// tone is jarring; it still needs to cut through as a "stop now" cue, so
+  /// this is a deliberate middle ground, not a mute.
+  static const double _alertVolume = 0.65;
+
   @override
   void initState() {
     super.initState();
@@ -309,8 +314,16 @@ class _HomeScreenState extends State<HomeScreen>
         // same policy via voicePipelineBusy). Vibration + the CRITICAL tone
         // below still fire, so the safety signal is not reduced.
         final micOpen = _voiceService.isListening || _voiceService.isProcessing;
+        // While another screen owns the audio channel (Location address,
+        // Settings, Help tour, SOS countdown), only a CRITICAL "থামুন" may
+        // talk over it — that is the safety override. CAUTION ("কাছে") and
+        // WARNING ("খুব কাছে") stay silent there; their vibration still fires
+        // and already informs the user, exactly as de-escalation does. On
+        // Home nothing holds the channel, so every level speaks as before.
+        final channelHeld = SensorFusionService.instance.uiAudioHold;
+        final mayInterrupt = verdict == ObstacleVerdict.critical || !channelHeld;
         final speech = _escalationSpeech(verdict);
-        if (speech.isNotEmpty && !micOpen) {
+        if (speech.isNotEmpty && !micOpen && mayInterrupt) {
           _voiceService.speak(speech);
         }
         // Distinctive alarm tone — reserved for CRITICAL so the sound
@@ -493,6 +506,7 @@ class _HomeScreenState extends State<HomeScreen>
         debugPrint('>> Alert player context not applied: $e');
       }
       await _alertPlayer.setReleaseMode(ReleaseMode.stop);
+      await _alertPlayer.setVolume(_alertVolume);
       await _alertPlayer.setSource(AssetSource('alerts/alert.wav'));
       _alertReady = true;
     } catch (e) {
@@ -1378,8 +1392,8 @@ class _HomeScreenState extends State<HomeScreen>
                           if (AppConstants.enablePiVision)
                             AccessibleActionButton(
                               icon: Icons.video_camera_back,
-                              label: 'কেন ক্যাম',
-                              labelEn: 'কেন ক্যাম',
+                              label: 'কেইন ক্যাম',
+                              labelEn: 'কেইন ক্যাম',
                               semanticHint:
                                   'লাঠির ক্যামেরা থেকে অবজেক্ট সনাক্তকরণ।',
                               onPressed: () => Navigator.pushNamed(

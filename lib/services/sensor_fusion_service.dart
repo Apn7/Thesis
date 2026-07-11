@@ -85,11 +85,23 @@ class SensorFusionService extends ChangeNotifier {
   /// net either way, so fusion can afford to stay quiet here.
   bool voicePipelineBusy = false;
 
-  /// Held while a screen that owns the audio channel is mounted (the SOS
-  /// screen: countdown + contact dialog must never be interleaved with
-  /// obstacle chatter). Set/cleared by that screen, like the transcript
-  /// interceptor pattern.
-  bool uiAudioHold = false;
+  /// Screens that currently own the audio channel (SOS countdown/dialog,
+  /// Location's address readout, Settings' spoken feedback, Help's command
+  /// tour — none of these may be interleaved with obstacle chatter, since
+  /// TTS interrupts). Each screen registers itself in `initState` and
+  /// removes itself in `dispose`, like the transcript-interceptor pattern.
+  ///
+  /// A set of owners, not a bool: voice navigation can mount the next
+  /// screen *before* the previous one's deferred dispose runs, and a shared
+  /// bool would let that stale dispose clear the hold the new screen just
+  /// took. Per-instance keys make release self-scoped and order-proof.
+  final Set<Object> _uiAudioHolders = <Object>{};
+
+  bool get uiAudioHold => _uiAudioHolders.isNotEmpty;
+
+  void holdUiAudio(Object owner) => _uiAudioHolders.add(owner);
+
+  void releaseUiAudio(Object owner) => _uiAudioHolders.remove(owner);
 
   bool get _announcementsHeld => voicePipelineBusy || uiAudioHold;
 

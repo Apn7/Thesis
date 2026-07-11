@@ -4,6 +4,7 @@ import '../../core/navigation/app_routes.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../../services/settings_service.dart';
 import '../../services/tts_service.dart';
 
@@ -28,6 +29,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // Own the audio channel while mounted (SOS pattern): the spoken feedback
+    // here (rate samples, reset confirmations) must not be cut off by
+    // fusion's obstacle callouts. The sonar CRITICAL alarm still gets
+    // through.
+    SensorFusionService.instance.holdUiAudio(this);
     // Rebuild when a voice command ("দ্রুত বলো") changes a setting while this
     // screen is open — the slider must track the real stored value.
     _settings.addListener(_onSettingsChanged);
@@ -40,6 +46,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   void dispose() {
+    SensorFusionService.instance.releaseUiAudio(this);
     _settings.removeListener(_onSettingsChanged);
     super.dispose();
   }

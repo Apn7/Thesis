@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/constants.dart';
 import '../../core/utils/voice_announcer.dart';
+import '../../services/sensor_fusion_service.dart';
 import '../../services/voice_navigation_service.dart';
 
 /// Help screen with tutorials and the command list.
@@ -21,6 +22,10 @@ class _HelpScreenState extends State<HelpScreen> {
   @override
   void initState() {
     super.initState();
+    // Own the audio channel while mounted (SOS pattern): the spoken command
+    // tour is long, and a single fusion obstacle callout would cut the whole
+    // manual off mid-sentence. The sonar CRITICAL alarm still gets through.
+    SensorFusionService.instance.holdUiAudio(this);
     // Guided spoken tour, in learning order: first the পরামর্শ (how to talk
     // to the app), then the full command list — a blind user gets the whole
     // manual read to them just by opening this page. Interruptible at any
@@ -34,6 +39,12 @@ class _HelpScreenState extends State<HelpScreen> {
         'সব কমান্ড আবার শুনতে বলুন: কমান্ড বলো।',
       );
     });
+  }
+
+  @override
+  void dispose() {
+    SensorFusionService.instance.releaseUiAudio(this);
+    super.dispose();
   }
 
   void _speakCommandTour() {

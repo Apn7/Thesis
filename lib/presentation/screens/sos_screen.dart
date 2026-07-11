@@ -68,7 +68,7 @@ class _SosScreenState extends State<SosScreen> {
     // must never be interleaved with fusion's obstacle callouts (TTS
     // interrupts — a scene callout would swallow a countdown number). The
     // sonar CRITICAL alarm is independent and still gets through.
-    SensorFusionService.instance.uiAudioHold = true;
+    SensorFusionService.instance.holdUiAudio(this);
     // If we arrived from a voice command, begin immediately (next frame so the
     // route arguments and the first build are ready).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -99,13 +99,13 @@ class _SosScreenState extends State<SosScreen> {
     _dialog.removeListener(_onSettingsChanged);
     // Only relinquish the pipeline if it's still ours (defensive against
     // overlapping screens stomping each other's handler). The audio hold is
-    // released under the same ownership check: re-entering SOS by voice pops
-    // this instance with a *deferred* dispose that would otherwise clear the
-    // hold the freshly-mounted SOS screen just took.
+    // keyed by this instance, so releasing unconditionally is safe even when
+    // re-entering SOS by voice pops this instance with a *deferred* dispose —
+    // the freshly-mounted screen holds under its own key.
     if (_voice.transcriptInterceptor == _handleTranscript) {
       _voice.transcriptInterceptor = null;
-      SensorFusionService.instance.uiAudioHold = false;
     }
+    SensorFusionService.instance.releaseUiAudio(this);
     _dialog.dispose();
     super.dispose();
   }

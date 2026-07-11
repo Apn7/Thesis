@@ -52,7 +52,7 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
     
     <application
-        android:label="test_app_1"
+        android:label="SmartCane"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
