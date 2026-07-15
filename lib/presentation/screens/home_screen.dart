@@ -81,11 +81,6 @@ class _HomeScreenState extends State<HomeScreen>
   final AudioPlayer _alertPlayer = AudioPlayer();
   bool _alertReady = false;
 
-  /// CRITICAL tone playback level (0..1). Kept below full scale — at 1.0 the
-  /// tone is jarring; it still needs to cut through as a "stop now" cue, so
-  /// this is a deliberate middle ground, not a mute.
-  static const double _alertVolume = 0.65;
-
   @override
   void initState() {
     super.initState();
@@ -506,7 +501,6 @@ class _HomeScreenState extends State<HomeScreen>
         debugPrint('>> Alert player context not applied: $e');
       }
       await _alertPlayer.setReleaseMode(ReleaseMode.stop);
-      await _alertPlayer.setVolume(_alertVolume);
       await _alertPlayer.setSource(AssetSource('alerts/alert.wav'));
       _alertReady = true;
     } catch (e) {

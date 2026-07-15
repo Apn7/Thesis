@@ -21,7 +21,8 @@ import wave
 from pathlib import Path
 
 SR = 44100
-OUT = Path(r"d:\Thesis\Thesis_project\Test_app\test_app_1\assets\alerts")
+# Resolve relative to this script so it runs under both Windows and WSL.
+OUT = Path(__file__).resolve().parent / "assets" / "alerts"
 
 
 def note(freq, dur_s, amp, attack_s=0.006, decay_tau=0.060,
@@ -88,6 +89,12 @@ write_wav(OUT / "listen_stop.wav", buf, peak=0.80)
 # alert: CRITICAL alarm — fourteen 110 ms pulses alternating 950/1350 Hz with
 # 55 ms gaps (~2.3 s). Dense harmonics (energy up to ~5.4 kHz) give it enough
 # edge to cut through traffic without square-wave harshness.
+#
+# Loudness is baked into the ASSET (peak below), NOT set at runtime: the player
+# shares STREAM_MUSIC with flutter_tts, and MainActivity pins that stream to
+# max, so any runtime AudioPlayer.setVolume risks the shared path / TTS level.
+# ~0.64 ≈ 65% of the former near-full-scale 0.98 — audibly softer, still a
+# clear "stop now" cue. Adjust here and regenerate to retune.
 buf = []
 t = 0.0
 for k in range(14):
@@ -96,4 +103,4 @@ for k in range(14):
                   harmonics=((1, 1.0), (2, 0.80), (3, 0.50),
                              (4, 0.25), (5, 0.12))), t)
     t += 0.165
-write_wav(OUT / "alert.wav", buf, peak=0.98)
+write_wav(OUT / "alert.wav", buf, peak=0.64)
